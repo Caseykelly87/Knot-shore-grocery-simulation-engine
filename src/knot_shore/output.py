@@ -3,14 +3,21 @@ output.py — Stage 3: Write DataFrames to CSV files and update manifest.json.
 
 This is the ONLY module that touches the filesystem for data output.
 
+Directory layout for daily data:
+  output/daily/{MM}/{DD}/{YYYY}/
+    department_sales.csv
+    store_summary.csv
+    anomaly_log.csv
+
+This groups all years' data for the same calendar date together, so
+daily/06/15/ contains 2023/, 2024/, 2025/, 2026/ side by side — useful
+for browsing YoY comparisons and for the backfill workflow.
+
 Responsibilities:
   - Write dimension tables (run once via init)
   - Write promotion schedule (run once via init)
-  - Write daily date folder: department_sales.csv, store_summary.csv, anomaly_log.csv
+  - Write daily date folder per date; skip if folder already exists (no overwrite)
   - Update manifest.json (accumulates run history)
-
-Skipping: if a date folder already exists, output is skipped for that date
-          with a log warning (no overwrite).
 
 CSV encoding: UTF-8, comma-delimited.  No Parquet.
 Helper columns (base_margin_pct, avg_ticket_base, items_per_transaction,
@@ -42,6 +49,23 @@ _DEPT_OUTPUT_COLS = [
     "transactions", "units_sold", "avg_ticket",
     "discount_rate", "promo_flag",
 ]
+
+
+def daily_dir_for(output_dir: Path, target_date: date) -> Path:
+    """Return the output directory for a specific date.
+
+    Layout: output_dir/daily/{MM}/{DD}/{YYYY}/
+
+    This groups all years' data for the same calendar date (MM/DD) together,
+    making YoY comparison browsing natural and supporting the backfill workflow.
+    """
+    return (
+        output_dir
+        / "daily"
+        / f"{target_date.month:02d}"
+        / f"{target_date.day:02d}"
+        / str(target_date.year)
+    )
 
 
 def _strip_helpers(dept_df: pd.DataFrame) -> pd.DataFrame:
@@ -101,13 +125,13 @@ def write_daily(
     anomaly_log_df: pd.DataFrame,
     output_dir: Path,
 ) -> bool:
-    """Write daily CSVs to output_dir/daily/YYYY-MM-DD/.
+    """Write daily CSVs to output_dir/daily/{MM}/{DD}/{YYYY}/.
 
     Returns True if files were written, False if the folder already existed
     (skipped — no overwrite).
     """
+    daily_dir = daily_dir_for(output_dir, target_date)
     date_str = target_date.isoformat()
-    daily_dir = output_dir / "daily" / date_str
 
     if daily_dir.exists():
         logger.warning(
@@ -119,7 +143,7 @@ def write_daily(
 
     # Strip Stage 1 helper columns before output
     dept_out = _strip_helpers(dept_df)
-    # Enforce canonical column order (extra cols from anomaly injection are harmless but tidy)
+    # Enforce canonical column order
     present = [c for c in _DEPT_OUTPUT_COLS if c in dept_out.columns]
     dept_out = dept_out[present]
 
@@ -155,10 +179,13 @@ def update_manifest(
     realism_active: bool,
     global_seed: int = GLOBAL_SEED,
     anomaly_summaries: list[dict] | None = None,
+    command: str = "run",
 ) -> None:
     """Read, update, and write manifest.json.
 
     Accumulates dates_generated and cumulative row counts across runs.
+    The command field records what operation last touched the manifest
+    (e.g. 'run', 'backfill').
     """
     manifest_path = output_dir / "manifest.json"
 
@@ -182,6 +209,7 @@ def update_manifest(
 
     manifest["last_run"] = datetime.now(timezone.utc).isoformat()
     manifest["last_run_dates"] = new_date_strs
+    manifest["last_command"] = command
     manifest["realism_engine"] = realism_active
     manifest["generator_version"] = GENERATOR_VERSION
     manifest["global_seed"] = global_seed
@@ -191,8 +219,9 @@ def update_manifest(
     dept_total = 0
     summary_total = 0
     for ds in manifest["dates_generated"]:
-        dept_path = output_dir / "daily" / ds / "department_sales.csv"
-        summary_path = output_dir / "daily" / ds / "store_summary.csv"
+        d = date.fromisoformat(ds)
+        dept_path = daily_dir_for(output_dir, d) / "department_sales.csv"
+        summary_path = daily_dir_for(output_dir, d) / "store_summary.csv"
         if dept_path.exists():
             try:
                 dept_total += sum(1 for _ in open(dept_path, encoding="utf-8")) - 1
@@ -241,6 +270,7 @@ def _empty_manifest(global_seed: int) -> dict:
     return {
         "last_run": "",
         "last_run_dates": [],
+        "last_command": "",
         "realism_engine": False,
         "generator_version": GENERATOR_VERSION,
         "global_seed": global_seed,
