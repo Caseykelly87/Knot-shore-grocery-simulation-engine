@@ -94,7 +94,8 @@ def test_full_pipeline_runs_without_db(monkeypatch, tmp_path):
     cmd_init(seed=42, output_dir=tmp_path)
     cmd_run(seed=42, output_dir=tmp_path, anchor=TEST_DATE, no_realism=True)
 
-    dept_path = tmp_path / "daily" / TEST_DATE.isoformat() / "department_sales.csv"
+    from knot_shore.output import daily_dir_for
+    dept_path = daily_dir_for(tmp_path, TEST_DATE) / "department_sales.csv"
     assert dept_path.exists(), "department_sales.csv not written"
 
     df = pd.read_csv(dept_path)

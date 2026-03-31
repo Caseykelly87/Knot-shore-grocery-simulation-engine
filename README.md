@@ -71,7 +71,21 @@ python -m knot_shore run --date 2026-03-28 --seed 42 --output ./output
 python -m knot_shore run --seed 42 --output ./output --no-realism
 ```
 
-### 4. Reports Only
+### 4. Backfill (catch up from mid-year start)
+
+If the engine is started mid-year, backfill generates every calendar date
+from January 1 through today, producing the 4-year window for each date.
+Existing folders are skipped automatically — safe to interrupt and resume.
+
+```bash
+# Default: January 1 of this year through today
+python -m knot_shore backfill --seed 42 --output ./output
+
+# Custom range
+python -m knot_shore backfill --from 2026-01-01 --to 2026-03-31 --seed 42 --output ./output
+```
+
+### 5. Reports Only
 
 ```bash
 python -m knot_shore reports --date 2026-03-28 --output ./output
@@ -102,15 +116,25 @@ output/
 ├── promotions/
 │   └── promotions.csv
 ├── daily/
-│   └── YYYY-MM-DD/
-│       ├── department_sales.csv
-│       ├── store_summary.csv
-│       └── anomaly_log.csv
+│   └── {MM}/                   # Month (01–12)
+│       └── {DD}/               # Day of month (01–31)
+│           ├── 2023/           # All years for this calendar date side by side
+│           ├── 2024/
+│           ├── 2025/
+│           └── 2026/
+│               ├── department_sales.csv
+│               ├── store_summary.csv
+│               └── anomaly_log.csv
 ├── reports/
 │   └── YYYY-MM-DD/
 │       └── store_NNN_report.txt
 └── manifest.json
 ```
+
+This layout groups all years' data for the same calendar date together.
+`daily/06/15/` holds 2023–2026 subdirectories side by side, making
+year-over-year comparison browsing natural and aligning with how the
+ETL pipeline ingests daily file drops.
 
 ---
 
