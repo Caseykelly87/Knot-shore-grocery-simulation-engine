@@ -16,8 +16,8 @@ def resolve_required_dates(anchor: date) -> list[date]:
 
     The set is: the seven-day trailing window ending on anchor
     (anchor, anchor-1, …, anchor-6) plus the same calendar date one year
-    prior.  When anchor is Feb 29 and the prior year has no Feb 29, the
-    prior-year date falls back to Feb 28.
+    back.  When anchor is Feb 29 and the year before has no Feb 29, the
+    one-year-back date falls back to Feb 28.
 
     Returns dates sorted chronologically ascending, deduplicated.
     """

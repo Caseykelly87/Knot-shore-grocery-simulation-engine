@@ -10,8 +10,8 @@ Directory layout for daily data:
     anomaly_log.csv
 
 This groups all years' data for the same calendar date together, so
-daily/06/15/ contains 2023/, 2024/, 2025/, 2026/ side by side — useful
-for browsing YoY comparisons and for the backfill workflow.
+daily/06/15/ contains subdirectories side by side — useful for browsing
+year-over-year comparisons.
 
 Responsibilities:
   - Write dimension tables (run once via init)
@@ -57,7 +57,7 @@ def daily_dir_for(output_dir: Path, target_date: date) -> Path:
     Layout: output_dir/daily/{MM}/{DD}/{YYYY}/
 
     This groups all years' data for the same calendar date (MM/DD) together,
-    making YoY comparison browsing natural and supporting the backfill workflow.
+    making year-over-year comparison browsing natural.
     """
     return (
         output_dir
@@ -185,7 +185,7 @@ def update_manifest(
 
     Accumulates dates_generated and cumulative row counts across runs.
     The command field records what operation last touched the manifest
-    (e.g. 'run', 'backfill').
+    (e.g. 'init', 'run', 'reports').
     """
     manifest_path = output_dir / "manifest.json"
 

@@ -3,10 +3,9 @@ cli.py — Entry point: orchestrates Stage 1 → Stage 2 → Anomaly Injection �
 
 Usage
 -----
-  python -m knot_shore init     --seed 42 --output ./output
-  python -m knot_shore run      --seed 42 --output ./output [--date YYYY-MM-DD] [--no-realism]
-  python -m knot_shore backfill --seed 42 --output ./output [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--no-realism]
-  python -m knot_shore reports  --date YYYY-MM-DD --output ./output
+  python -m knot_shore init    --seed 42 --output ./output
+  python -m knot_shore run     --seed 42 --output ./output [--date YYYY-MM-DD] [--no-realism]
+  python -m knot_shore reports --date YYYY-MM-DD --output ./output
 
 Commands
 --------
@@ -15,24 +14,13 @@ Commands
     Safe to re-run — skips files that already exist.
 
   run
-    Compute the 4 target dates (anchor + same calendar date for 3 prior years).
-    Anchor defaults to today; override with --date.
-    For each date: skip if exists → Stage 1 → Stage 2 (optional) → anomaly injection → Stage 3.
+    Resolve the eight target dates for the given anchor: the trailing
+    seven-day window (anchor through anchor-6) plus the same calendar
+    date one year prior.  Anchor defaults to today; override with --date.
+    For each date: skip if exists → Stage 1 → Stage 2 (optional) →
+    anomaly injection → Stage 3.
     Generate store reports for the anchor date only.
     Update manifest.json.
-
-  backfill
-    Generate data for every calendar date from --from through --to (inclusive),
-    producing the 4-year window for each date.
-
-    Default range: January 1 of the current year through today.
-
-    Use this when starting the engine mid-year to catch up all dates that
-    were not generated as they occurred.  Existing date folders are skipped
-    automatically — backfill is safe to re-run and resume after interruption.
-
-    Store reports are NOT generated during backfill (only today's report is
-    meaningful; use the reports command for any specific date).
 
   reports
     (Re-)generate store report files for a specific date.
@@ -58,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Shared pipeline runner (used by both run and backfill)
+# Shared pipeline runner
 # ---------------------------------------------------------------------------
 
 def _run_pipeline(
@@ -85,7 +73,7 @@ def _run_pipeline(
         When True, skip Stage 2 even if DB is configured.
     generate_reports_for:
         If not None, generate store reports for this specific date after writing.
-        Pass None to skip report generation (e.g. during backfill).
+        Pass None to skip report generation.
 
     Returns
     -------
@@ -210,6 +198,7 @@ def cmd_run(
     no_realism: bool,
 ) -> None:
     from knot_shore import realism  # noqa: PLC0415
+    from knot_shore.date_resolver import resolve_required_dates  # noqa: PLC0415
     from knot_shore.output import (  # noqa: PLC0415
         dimensions_exist,
         load_promotions,
@@ -218,8 +207,6 @@ def cmd_run(
     )
 
     _require_init(output_dir, dimensions_exist, promotions_exist)
-
-    from knot_shore.date_resolver import resolve_required_dates  # noqa: PLC0415
 
     promos_df = load_promotions(output_dir)
     target_dates = resolve_required_dates(anchor)
@@ -232,7 +219,7 @@ def cmd_run(
         seed=seed,
         output_dir=output_dir,
         no_realism=no_realism,
-        generate_reports_for=anchor,  # reports only for the anchor (today) date
+        generate_reports_for=anchor,
     )
 
     update_manifest(
@@ -248,97 +235,6 @@ def cmd_run(
         "run complete. %d dates newly generated (of %d attempted).",
         len(generated),
         len(target_dates),
-    )
-
-
-# ---------------------------------------------------------------------------
-# Command: backfill
-# ---------------------------------------------------------------------------
-
-def cmd_backfill(
-    seed: int,
-    output_dir: Path,
-    from_date: date,
-    to_date: date,
-    no_realism: bool,
-) -> None:
-    """Generate data for every calendar date in [from_date, to_date].
-
-    For each calendar date, the full 4-year window is produced
-    (that date + same calendar date in 3 prior years).
-
-    Existing date folders are skipped automatically, so backfill is safe
-    to interrupt and re-run.
-    """
-    from knot_shore import realism  # noqa: PLC0415
-    from knot_shore.output import (  # noqa: PLC0415
-        dimensions_exist,
-        load_promotions,
-        promotions_exist,
-        update_manifest,
-    )
-
-    _require_init(output_dir, dimensions_exist, promotions_exist)
-
-    if from_date > to_date:
-        logger.error("--from (%s) must be on or before --to (%s).", from_date, to_date)
-        sys.exit(1)
-
-    promos_df = load_promotions(output_dir)
-    use_realism = _check_realism(no_realism, realism)
-
-    anchor_dates = _date_range(from_date, to_date)
-    total_calendar_dates = len(anchor_dates)
-
-    logger.info(
-        "Backfill: %d calendar dates (%s → %s), 4-year window each.",
-        total_calendar_dates,
-        from_date.isoformat(),
-        to_date.isoformat(),
-    )
-
-    all_generated: list[date] = []
-    all_anomaly_summaries: list[dict] = []
-    all_run_dates: list[date] = []
-
-    for i, anchor in enumerate(anchor_dates, start=1):
-        target_dates = _target_dates(anchor)
-        all_run_dates.extend(target_dates)
-
-        if i % 10 == 0 or i == total_calendar_dates:
-            logger.info(
-                "Backfill progress: %d/%d calendar dates processed …",
-                i,
-                total_calendar_dates,
-            )
-
-        generated, anomaly_summaries = _run_pipeline(
-            target_dates=target_dates,
-            promos_df=promos_df,
-            seed=seed,
-            output_dir=output_dir,
-            no_realism=no_realism,
-            generate_reports_for=None,  # no reports during backfill
-        )
-        all_generated.extend(generated)
-        all_anomaly_summaries.extend(anomaly_summaries)
-
-    # Deduplicate run_dates before writing manifest (4-year windows overlap)
-    unique_run_dates = sorted(set(all_run_dates))
-
-    update_manifest(
-        output_dir=output_dir,
-        run_dates=unique_run_dates,
-        realism_active=use_realism,
-        global_seed=seed,
-        anomaly_summaries=all_anomaly_summaries,
-        command="backfill",
-    )
-
-    logger.info(
-        "Backfill complete. %d date-folders newly written (of %d total across all windows).",
-        len(all_generated),
-        len(unique_run_dates),
     )
 
 
@@ -439,7 +335,13 @@ def _build_parser() -> argparse.ArgumentParser:
     init_p.add_argument("--output", type=Path, default=Path("./output"), help="Output directory.")
 
     # ---- run ----
-    run_p = sub.add_parser("run", help="Generate daily data for today + 3 prior-year dates.")
+    run_p = sub.add_parser(
+        "run",
+        help=(
+            "Generate daily data for the anchor date, the six preceding days, "
+            "and the same calendar date one year prior (eight dates total)."
+        ),
+    )
     run_p.add_argument("--seed", type=int, default=42)
     run_p.add_argument("--output", type=Path, default=Path("./output"))
     run_p.add_argument(
@@ -453,38 +355,6 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help="Disable Stage 2 realism engine even if KNOT_SHORE_DB_URL is set.",
-    )
-
-    # ---- backfill ----
-    bf_p = sub.add_parser(
-        "backfill",
-        help=(
-            "Generate data for every date from --from through --to (inclusive), "
-            "producing the 4-year window for each. "
-            "Defaults to January 1 of the current year through today."
-        ),
-    )
-    bf_p.add_argument("--seed", type=int, default=42)
-    bf_p.add_argument("--output", type=Path, default=Path("./output"))
-    bf_p.add_argument(
-        "--from",
-        dest="from_date",
-        type=lambda s: date.fromisoformat(s),
-        default=None,
-        help="Start date (YYYY-MM-DD). Defaults to January 1 of the current year.",
-    )
-    bf_p.add_argument(
-        "--to",
-        dest="to_date",
-        type=lambda s: date.fromisoformat(s),
-        default=None,
-        help="End date (YYYY-MM-DD). Defaults to today.",
-    )
-    bf_p.add_argument(
-        "--no-realism",
-        action="store_true",
-        default=False,
-        help="Disable Stage 2 realism engine.",
     )
 
     # ---- reports ----
@@ -513,18 +383,6 @@ def main(argv: list[str] | None = None) -> None:
             seed=args.seed,
             output_dir=args.output,
             anchor=anchor,
-            no_realism=args.no_realism,
-        )
-
-    elif args.command == "backfill":
-        today = date.today()
-        from_date = args.from_date or date(today.year, 1, 1)
-        to_date = args.to_date or today
-        cmd_backfill(
-            seed=args.seed,
-            output_dir=args.output,
-            from_date=from_date,
-            to_date=to_date,
             no_realism=args.no_realism,
         )
 
