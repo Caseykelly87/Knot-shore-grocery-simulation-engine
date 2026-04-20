@@ -44,7 +44,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 
 import pandas as pd
@@ -55,38 +55,6 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Target date helpers
-# ---------------------------------------------------------------------------
-
-def _target_dates(anchor: date) -> list[date]:
-    """Return the 4 target dates: anchor and same calendar date for 3 prior years.
-
-    Handles Feb 29 gracefully — uses Feb 28 when the prior year is not a leap year.
-    Returns dates ordered oldest → newest.
-    """
-    dates = []
-    for years_back in range(4):
-        yr = anchor.year - years_back
-        try:
-            d = anchor.replace(year=yr)
-        except ValueError:
-            d = date(yr, 2, 28)
-        dates.append(d)
-    dates.reverse()
-    return dates
-
-
-def _date_range(start: date, end: date) -> list[date]:
-    """Return every calendar date from start through end, inclusive."""
-    dates = []
-    current = start
-    while current <= end:
-        dates.append(current)
-        current += timedelta(days=1)
-    return dates
 
 
 # ---------------------------------------------------------------------------
@@ -251,8 +219,10 @@ def cmd_run(
 
     _require_init(output_dir, dimensions_exist, promotions_exist)
 
+    from knot_shore.date_resolver import resolve_required_dates  # noqa: PLC0415
+
     promos_df = load_promotions(output_dir)
-    target_dates = _target_dates(anchor)
+    target_dates = resolve_required_dates(anchor)
 
     use_realism = _check_realism(no_realism, realism)
 
