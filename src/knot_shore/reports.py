@@ -143,7 +143,8 @@ def generate_store_report(
         for _, promo_row in active.iterrows():
             d_name = dept_id_to_name.get(int(promo_row["department_id"]), "")
             disc = int(round(float(promo_row["discount_pct"]) * 100))
-            end_str = promo_row["end_date"].strftime("%-m/%-d")
+            end_d = promo_row["end_date"]
+            end_str = f"{end_d.month}/{end_d.day}"
             active_promos.append(
                 f"- {promo_row['promo_name']}: {d_name} ({disc}% off, ends {end_str})"
             )
@@ -165,7 +166,7 @@ def generate_store_report(
         notes_text = note_choices[note_idx]
 
     # --- Build report ---
-    day_str = target_date.strftime("%A, %B %-d, %Y")
+    day_str = target_date.strftime("%A, %B %d, %Y")
     lines: list[str] = [
         "KNOT SHORE GROCERY \u2014 DAILY STORE REPORT",
         "=" * 40,
