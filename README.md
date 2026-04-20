@@ -16,16 +16,22 @@ data modeling, and analysis dashboards.
 
 ## How It Works
 
-Each run generates data for **4 dates**:
+Each run generates data for **8 dates**:
 
 | Date | Description |
 |------|-------------|
-| Today | Current calendar date |
-| −1 year | Same calendar date, 1 year prior |
-| −2 years | Same calendar date, 2 years prior |
-| −3 years | Same calendar date, 3 years prior |
+| Today (anchor) | Current calendar date |
+| anchor − 1 day | Yesterday |
+| anchor − 2 days | Two days ago |
+| anchor − 3 days | Three days ago |
+| anchor − 4 days | Four days ago |
+| anchor − 5 days | Five days ago |
+| anchor − 6 days | Six days ago |
+| anchor − 1 year | Same calendar date, one year prior |
 
-Running daily for a full year produces a complete 4-year dataset.
+Running the engine daily fills in the trailing seven-day window as it advances,
+while always keeping the one-year-ago comparison date current.  Folders that
+already exist on disk are skipped automatically — re-running is safe.
 
 ### Three-Stage Pipeline
 
@@ -61,31 +67,17 @@ python -m knot_shore init --seed 42 --output ./output
 ### 3. Daily Run
 
 ```bash
-# Today + 3 prior-year same dates
+# Anchor = today: generates today, the six preceding days, and the same date one year ago
 python -m knot_shore run --seed 42 --output ./output
 
-# Specific date
+# Specific anchor date
 python -m knot_shore run --date 2026-03-28 --seed 42 --output ./output
 
 # Force-disable realism engine (even if DB_URL is set)
 python -m knot_shore run --seed 42 --output ./output --no-realism
 ```
 
-### 4. Backfill (catch up from mid-year start)
-
-If the engine is started mid-year, backfill generates every calendar date
-from January 1 through today, producing the 4-year window for each date.
-Existing folders are skipped automatically — safe to interrupt and resume.
-
-```bash
-# Default: January 1 of this year through today
-python -m knot_shore backfill --seed 42 --output ./output
-
-# Custom range
-python -m knot_shore backfill --from 2026-01-01 --to 2026-03-31 --seed 42 --output ./output
-```
-
-### 5. Reports Only
+### 4. Reports Only
 
 ```bash
 python -m knot_shore reports --date 2026-03-28 --output ./output
@@ -118,10 +110,7 @@ output/
 ├── daily/
 │   └── {MM}/                   # Month (01–12)
 │       └── {DD}/               # Day of month (01–31)
-│           ├── 2023/           # All years for this calendar date side by side
-│           ├── 2024/
-│           ├── 2025/
-│           └── 2026/
+│           └── {YYYY}/
 │               ├── department_sales.csv
 │               ├── store_summary.csv
 │               └── anomaly_log.csv
@@ -132,9 +121,9 @@ output/
 ```
 
 This layout groups all years' data for the same calendar date together.
-`daily/06/15/` holds 2023–2026 subdirectories side by side, making
-year-over-year comparison browsing natural and aligning with how the
-ETL pipeline ingests daily file drops.
+`daily/06/15/` holds year subdirectories side by side, making year-over-year
+comparison browsing natural and aligning with how the ETL pipeline ingests
+daily file drops.
 
 ---
 
@@ -151,6 +140,7 @@ src/knot_shore/
 ├── anomalies.py       # Anomaly injection (post-realism, pre-output)
 ├── reports.py         # Plain-text store report generator
 ├── output.py          # CSV writer and manifest updater — Stage 3
+├── date_resolver.py   # Resolves the eight target dates for a run
 └── cli.py             # Entry point: orchestrates Stage 1 → 2 → 3
 ```
 
@@ -165,7 +155,7 @@ pytest --cov=knot_shore
 
 Test suite covers waterfall integrity, summary/detail consistency, output ranges,
 promo overlap, calendar correctness, anomaly behavior, deterministic seeding,
-and realism engine skip/clamp behavior.
+realism engine skip/clamp behavior, date resolver logic, and CLI parser surface.
 
 ---
 
