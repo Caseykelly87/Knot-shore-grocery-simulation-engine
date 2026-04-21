@@ -18,7 +18,9 @@ Series used (§5.3):
 Application order (§5.5):
   1. Query all series for target dates (cached per run)
   2. Apply sales_volume_multiplier → gross_sales
-  3. Recalculate derivation chain (§4.10 steps 2-10)
+  3. Recalculate derivation chain (§4.10 steps 2-10); RNG seeded as
+     global_seed + target_date.toordinal() + 999_999 to stay decorrelated
+     from Stage 1 and anomaly injection while honoring --seed
   4. Apply margin_pressure per department (additive adjustment to base_margin_pct)
   5. Recalculate cogs, gross_margin, gross_margin_pct (steps 4-6)
   6. Re-aggregate store_summary from adjusted dept_sales
@@ -39,6 +41,7 @@ import pandas as pd
 from knot_shore.config import (
     DEPARTMENTS,
     ERS_DEPT_MAP,
+    GLOBAL_SEED,
     REALISM_CPI_FOOD_COEFF,
     REALISM_LABOR_CLAMP,
     REALISM_MARGIN_COEFF,
@@ -233,6 +236,7 @@ def adjust(
     summary_df: pd.DataFrame,
     target_date: date,
     force_disable: bool = False,
+    global_seed: int = GLOBAL_SEED,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Apply realism engine adjustments to dept and summary DataFrames.
 
@@ -259,7 +263,7 @@ def adjust(
     dept_df["gross_sales"] = (dept_df["gross_sales"] * vol_mult).round(2)
 
     # Step 3: Recalculate derivation chain (uses helper cols still present from Stage 1)
-    rng = np.random.default_rng(target_date.toordinal() + 999_999)
+    rng = np.random.default_rng(global_seed + target_date.toordinal() + 999_999)
     dept_df = apply_derivations(dept_df, rng)
 
     # Steps 4-5: Apply margin pressure per department
