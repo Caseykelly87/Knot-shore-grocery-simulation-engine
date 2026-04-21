@@ -238,27 +238,29 @@ def update_manifest(
         "store_summary": summary_total,
     }
 
-    # Merge anomaly summaries from this run
-    if anomaly_summaries:
-        run_total = sum(a.get("total_injected", 0) for a in anomaly_summaries)
-        run_by_type: dict[str, int] = {
-            "integrity_breach": 0,
-            "missing_department": 0,
-            "margin_outlier": 0,
-            "duplicate_row": 0,
-        }
-        for a in anomaly_summaries:
-            for k in run_by_type:
-                run_by_type[k] += a.get("by_type", {}).get(k, 0)
+    # Rebuild anomaly_summary from disk — mirrors the cumulative_row_counts
+    # pattern above. anomaly_summaries parameter is retained for API stability
+    # but is no longer consulted; disk is the source of truth.
+    _ANOMALY_TYPES = ("integrity_breach", "missing_department", "margin_outlier", "duplicate_row")
+    disk_total = 0
+    disk_by_type: dict[str, int] = {k: 0 for k in _ANOMALY_TYPES}
+    for ds in manifest["dates_generated"]:
+        d = date.fromisoformat(ds)
+        anomaly_path = daily_dir_for(output_dir, d) / "anomaly_log.csv"
+        if anomaly_path.exists():
+            try:
+                adf = pd.read_csv(anomaly_path, encoding="utf-8")
+                disk_total += len(adf)
+                if not adf.empty and "anomaly_type" in adf.columns:
+                    for k in _ANOMALY_TYPES:
+                        disk_by_type[k] += int((adf["anomaly_type"] == k).sum())
+            except (pd.errors.EmptyDataError, OSError):
+                pass
 
-        prev = manifest.get("anomaly_summary", {})
-        prev_total = prev.get("total_injected", 0)
-        prev_by = prev.get("by_type", {k: 0 for k in run_by_type})
-
-        manifest["anomaly_summary"] = {
-            "total_injected": prev_total + run_total,
-            "by_type": {k: prev_by.get(k, 0) + run_by_type[k] for k in run_by_type},
-        }
+    manifest["anomaly_summary"] = {
+        "total_injected": disk_total,
+        "by_type": disk_by_type,
+    }
 
     output_dir.mkdir(parents=True, exist_ok=True)
     with open(manifest_path, "w", encoding="utf-8") as fh:
