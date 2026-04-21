@@ -111,6 +111,7 @@ def _run_pipeline(
                 summary_df=summary_df,
                 target_date=target_date,
                 force_disable=False,
+                global_seed=seed,
             )
 
         # Anomaly injection
