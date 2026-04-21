@@ -194,6 +194,38 @@ def test_anomaly_summary_counts():
     assert s["by_type"]["duplicate_row"] == 0
 
 
+def test_inject_reproducible_regardless_of_row_order():
+    """inject() must produce the same anomaly log regardless of input row order.
+
+    Uses date(2024, 8, 1) / seed=42 — confirmed to produce anomalies that
+    select a department from the store's dept_id list, exposing the ordering
+    sensitivity of pd.Series.unique() on the unpatched code.
+    """
+    from knot_shore.promotions import generate_promotions  # noqa: PLC0415
+
+    _date = date(2024, 8, 1)
+    promos = generate_promotions(seed=42)
+    dept_df, sum_df = generate_day(
+        target_date=_date,
+        stores=STORES,
+        departments=DEPARTMENTS,
+        promos_df=promos,
+        global_seed=42,
+    )
+
+    cols = ["store_id", "department_id", "anomaly_type", "description"]
+
+    _, _, a = inject(dept_df.copy(), sum_df.copy(), _date, global_seed=42)
+    shuffled = dept_df.iloc[::-1].reset_index(drop=True)
+    _, _, b = inject(shuffled, sum_df.copy(), _date, global_seed=42)
+
+    pd.testing.assert_frame_equal(
+        a.sort_values(cols).reset_index(drop=True)[cols],
+        b.sort_values(cols).reset_index(drop=True)[cols],
+        check_like=False,
+    )
+
+
 def test_anomaly_summary_empty():
     log = pd.DataFrame(
         columns=["date_key", "store_id", "department_id", "anomaly_type", "description"]

@@ -99,7 +99,7 @@ def inject(
         if store_rows.empty:
             continue
 
-        dept_ids = store_rows["department_id"].unique().tolist()
+        dept_ids = sorted(store_rows["department_id"].unique().tolist())
         chosen_dept_id = int(rng.choice(dept_ids))
 
         if anomaly_type == TYPE_INTEGRITY:
