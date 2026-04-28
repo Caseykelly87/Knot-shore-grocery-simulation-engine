@@ -32,10 +32,12 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import pandas as pd
+
+from knot_shore.output import load_promotions, update_manifest
 
 logging.basicConfig(
     level=logging.INFO,
@@ -43,6 +45,49 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Backfill defaults — canonical window 2025-07-01 through 2025-12-31
+# ---------------------------------------------------------------------------
+
+DEFAULT_BACKFILL_END_DATE = date(2025, 12, 31)
+DEFAULT_BACKFILL_DAYS = 183
+
+
+def resolve_backfill_dates(
+    start_date: date | None,
+    end_date: date | None,
+    days: int,
+) -> list[date]:
+    """Resolve the contiguous list of dates for a backfill run.
+
+    Exactly one of start_date or end_date may be provided. If neither
+    is provided, the canonical end_date (DEFAULT_BACKFILL_END_DATE) is
+    used. The window length is governed by `days`.
+
+    The returned list is sorted ascending and strictly contiguous —
+    no T-365 date, no gaps.
+
+    Raises
+    ------
+    ValueError
+        If both start_date and end_date are provided, or if days < 1.
+    """
+    if start_date is not None and end_date is not None:
+        raise ValueError(
+            "--start-date and --end-date are mutually exclusive."
+        )
+    if days < 1:
+        raise ValueError(f"days must be a positive integer (got {days}).")
+
+    if start_date is not None:
+        anchor_start = start_date
+        return [anchor_start + timedelta(days=i) for i in range(days)]
+
+    anchor_end = end_date if end_date is not None else DEFAULT_BACKFILL_END_DATE
+    # Inclusive of anchor_end, going back days-1 steps
+    return [anchor_end - timedelta(days=days - 1 - i) for i in range(days)]
 
 
 # ---------------------------------------------------------------------------
@@ -240,6 +285,75 @@ def cmd_run(
 
 
 # ---------------------------------------------------------------------------
+# Command: backfill
+# ---------------------------------------------------------------------------
+
+def cmd_backfill(
+    seed: int,
+    output_dir: Path,
+    start_date: date | None,
+    end_date: date | None,
+    days: int,
+    no_realism: bool,
+) -> None:
+    """Generate a contiguous range of dates for historical backfill.
+
+    Reuses the same _run_pipeline that cmd_run uses; differs only in
+    the date list (purely contiguous, no T-365) and in not generating
+    store reports.
+
+    Default window when neither start_date nor end_date is provided:
+    DEFAULT_BACKFILL_END_DATE (2025-12-31) ending, DEFAULT_BACKFILL_DAYS
+    (183) length, producing 2025-07-02 through 2025-12-31.
+    """
+    from knot_shore import realism  # noqa: PLC0415
+    from knot_shore.output import (  # noqa: PLC0415
+        dimensions_exist,
+        promotions_exist,
+    )
+
+    _require_init(output_dir, dimensions_exist, promotions_exist)
+
+    target_dates = resolve_backfill_dates(
+        start_date=start_date, end_date=end_date, days=days
+    )
+
+    promos_df = load_promotions(output_dir)
+    use_realism = _check_realism(no_realism, realism)
+
+    logger.info(
+        "Backfill: %d dates, %s through %s.",
+        len(target_dates),
+        target_dates[0].isoformat(),
+        target_dates[-1].isoformat(),
+    )
+
+    generated, anomaly_summaries = _run_pipeline(
+        target_dates=target_dates,
+        promos_df=promos_df,
+        seed=seed,
+        output_dir=output_dir,
+        no_realism=no_realism,
+        generate_reports_for=None,
+    )
+
+    update_manifest(
+        output_dir=output_dir,
+        run_dates=target_dates,
+        realism_active=use_realism,
+        global_seed=seed,
+        anomaly_summaries=anomaly_summaries,
+        command="backfill",
+    )
+
+    logger.info(
+        "backfill complete. %d dates newly generated (of %d attempted).",
+        len(generated),
+        len(target_dates),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Command: reports
 # ---------------------------------------------------------------------------
 
@@ -358,6 +472,53 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Disable Stage 2 realism engine even if KNOT_SHORE_DB_URL is set.",
     )
 
+    # ---- backfill ----
+    bf_p = sub.add_parser(
+        "backfill",
+        help=(
+            "Generate a contiguous historical date range. Defaults to the "
+            "canonical 2025-07-01 through 2025-12-31 window. Useful for "
+            "populating downstream pipeline fixtures in one invocation."
+        ),
+    )
+    bf_p.add_argument("--seed", type=int, default=42)
+    bf_p.add_argument("--output", type=Path, default=Path("./output"))
+
+    # Mutually exclusive group for start vs end date — argparse handles the
+    # "both provided" rejection automatically.
+    bf_anchor = bf_p.add_mutually_exclusive_group()
+    bf_anchor.add_argument(
+        "--start-date",
+        type=lambda s: date.fromisoformat(s),
+        default=None,
+        help=(
+            "First date of the range (YYYY-MM-DD). The range extends forward "
+            "by --days. Mutually exclusive with --end-date."
+        ),
+    )
+    bf_anchor.add_argument(
+        "--end-date",
+        type=lambda s: date.fromisoformat(s),
+        default=None,
+        help=(
+            "Last date of the range (YYYY-MM-DD). The range extends backward "
+            "by --days. Defaults to 2025-12-31. Mutually exclusive with "
+            "--start-date."
+        ),
+    )
+    bf_p.add_argument(
+        "--days",
+        type=int,
+        default=DEFAULT_BACKFILL_DAYS,
+        help=f"Length of the range in days (default {DEFAULT_BACKFILL_DAYS}).",
+    )
+    bf_p.add_argument(
+        "--no-realism",
+        action="store_true",
+        default=False,
+        help="Disable Stage 2 realism engine even if KNOT_SHORE_DB_URL is set.",
+    )
+
     # ---- reports ----
     rep_p = sub.add_parser("reports", help="(Re-)generate store reports for a date.")
     rep_p.add_argument(
@@ -384,6 +545,16 @@ def main(argv: list[str] | None = None) -> None:
             seed=args.seed,
             output_dir=args.output,
             anchor=anchor,
+            no_realism=args.no_realism,
+        )
+
+    elif args.command == "backfill":
+        cmd_backfill(
+            seed=args.seed,
+            output_dir=args.output,
+            start_date=args.start_date,
+            end_date=args.end_date,
+            days=args.days,
             no_realism=args.no_realism,
         )
 

@@ -33,6 +33,8 @@ Running the engine daily fills in the trailing seven-day window as it advances,
 while always keeping the one-year-ago comparison date current.  Folders that
 already exist on disk are skipped automatically — re-running is safe.
 
+For one-shot historical backfills, see [Historical Backfill](#historical-backfill) below.
+
 ### Three-Stage Pipeline
 
 ```
@@ -77,7 +79,45 @@ python -m knot_shore run --date 2026-03-28 --seed 42 --output ./output
 python -m knot_shore run --seed 42 --output ./output --no-realism
 ```
 
-### 4. Reports Only
+### 4. Historical Backfill
+
+For demo, fixture, and portfolio purposes, the engine can generate a contiguous
+range of historical dates in a single invocation. This is the mode used to
+populate the canonical fixtures consumed by the downstream ETL → API → portal
+pipeline.
+
+The default canonical window is **2025-07-01 through 2025-12-31** — six months
+ending on December 31, 2025. This window aligns with the period for which macro
+economic data (FRED CPI, BLS unemployment, USDA ERS food retail) is reliably
+available downstream. The canonical window may shift in future regenerations as
+new economic data becomes available; today's default is fixed for reference.
+
+```bash
+# Default — generates 2025-07-02 through 2025-12-31 (183 days)
+python -m knot_shore backfill --output ./output
+
+# Override with end date — six months ending given date
+python -m knot_shore backfill --end-date 2025-09-30 --output ./output
+
+# Override with start date — six months starting given date
+python -m knot_shore backfill --start-date 2025-07-01 --output ./output
+
+# Custom window length (works with either start or end)
+python -m knot_shore backfill --days 30 --end-date 2025-12-31 --output ./output
+```
+
+`--start-date` and `--end-date` are mutually exclusive — provide at most one.
+
+Notes:
+
+- Backfill does **not** generate store reports. Reports are designed to summarize
+  a single anchor date; running them across hundreds of days would be wrong scope.
+  Use `python -m knot_shore reports --date <YYYY-MM-DD>` separately if needed.
+- Re-running is safe: any date folder that already exists on disk is skipped.
+- This mode produces the canonical fixtures that flow downstream to the ETL,
+  API, and portal repositories.
+
+### 5. Reports Only
 
 ```bash
 python -m knot_shore reports --date 2026-03-28 --output ./output
