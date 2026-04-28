@@ -67,9 +67,9 @@ class TestBackfillSubcommand:
         args = _parse(["backfill", "--end-date", "2025-09-30"])
         assert args.end_date == date(2025, 9, 30)
 
-    def test_backfill_days_defaults_183(self):
+    def test_backfill_days_defaults_184(self):
         args = _parse(["backfill"])
-        assert args.days == 183
+        assert args.days == 184
 
     def test_backfill_parses_custom_days(self):
         args = _parse(["backfill", "--days", "30"])

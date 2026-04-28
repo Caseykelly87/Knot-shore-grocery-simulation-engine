@@ -93,7 +93,7 @@ available downstream. The canonical window may shift in future regenerations as
 new economic data becomes available; today's default is fixed for reference.
 
 ```bash
-# Default — generates 2025-07-02 through 2025-12-31 (183 days)
+# Default — generates 2025-07-02 through 2025-12-31 (184 days)
 python -m knot_shore backfill --output ./output
 
 # Override with end date — six months ending given date

@@ -52,7 +52,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 DEFAULT_BACKFILL_END_DATE = date(2025, 12, 31)
-DEFAULT_BACKFILL_DAYS = 183
+DEFAULT_BACKFILL_DAYS = 184
 
 
 def resolve_backfill_dates(
@@ -304,7 +304,7 @@ def cmd_backfill(
 
     Default window when neither start_date nor end_date is provided:
     DEFAULT_BACKFILL_END_DATE (2025-12-31) ending, DEFAULT_BACKFILL_DAYS
-    (183) length, producing 2025-07-02 through 2025-12-31.
+    (184) length, producing 2025-07-02 through 2025-12-31.
     """
     from knot_shore import realism  # noqa: PLC0415
     from knot_shore.output import (  # noqa: PLC0415
