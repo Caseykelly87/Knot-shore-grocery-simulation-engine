@@ -160,11 +160,11 @@ def write_daily(
         anomaly_out.to_csv(daily_dir / "anomaly_log.csv", index=False, encoding="utf-8")
 
     logger.info(
-        "Wrote daily output for %s: %d dept rows, %d summary rows, %d anomalies",
-        date_str,
-        len(dept_out),
-        len(summary_df),
-        len(anomaly_log_df),
+        "wrote_daily_output",
+        date=date_str,
+        dept_rows=len(dept_out),
+        summary_rows=len(summary_df),
+        anomaly_rows=len(anomaly_log_df),
     )
     return True
 
