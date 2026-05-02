@@ -125,6 +125,44 @@ python -m knot_shore reports --date 2026-03-28 --output ./output
 
 ---
 
+## Logging
+
+Pipeline runs emit structured logs via [structlog](https://www.structlog.org/).
+Output is human-readable colored text when stdout is a tty, single-line JSON
+otherwise. Log level and format can both be overridden via environment
+variables:
+
+| Variable | Values | Default |
+|---|---|---|
+| `LOG_LEVEL` | `debug`, `info`, `warning`, `error`, `critical` | `info` |
+| `LOG_FORMAT` | `console`, `json` | auto (console if tty, else json) |
+
+Example console output (default in a terminal):
+
+```
+2025-12-31T17:34:42.118Z [info     ] backfill_started               command=backfill target_date_count=183 start_date=2025-07-02 end_date=2025-12-31
+```
+
+Example JSON output (default when piped or redirected, or when `LOG_FORMAT=json`):
+
+```json
+{"event": "backfill_started", "command": "backfill", "target_date_count": 183, "start_date": "2025-07-02", "end_date": "2025-12-31", "level": "info", "logger": "knot_shore.cli", "timestamp": "2025-12-31T17:34:42.118Z"}
+```
+
+To debug a failing pipeline run:
+
+```bash
+LOG_LEVEL=debug python -m knot_shore backfill --output ./output --no-realism
+```
+
+To capture structured logs for offline analysis:
+
+```bash
+LOG_FORMAT=json python -m knot_shore backfill --output ./output --no-realism > run.log
+```
+
+---
+
 ## Realism Engine
 
 Set `KNOT_SHORE_DB_URL` to connect to the ETL pipeline's Postgres database:
