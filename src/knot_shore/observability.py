@@ -1,0 +1,110 @@
+"""Structlog configuration for the simulation engine.
+
+Single entry point: configure_logging(). Called once at startup from
+cli.py. The configuration applies to both structlog loggers (created
+via structlog.get_logger()) and the stdlib logging loggers (created
+via logging.getLogger()) — they share the same renderer and level
+filter through structlog's stdlib bridge.
+
+Output format
+-------------
+- Auto-detect: console (colored, human-friendly) when stdout is a tty,
+  json (single-line, machine-parseable) otherwise.
+- Override: set LOG_FORMAT=json or LOG_FORMAT=console.
+
+Log level
+---------
+- LOG_LEVEL env var (case-insensitive). Defaults to info.
+- Valid values: debug, info, warning, error, critical.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import sys
+
+import structlog
+
+
+def _resolve_level() -> int:
+    raw = os.environ.get("LOG_LEVEL", "info").lower()
+    mapping = {
+        "debug": logging.DEBUG,
+        "info": logging.INFO,
+        "warning": logging.WARNING,
+        "error": logging.ERROR,
+        "critical": logging.CRITICAL,
+    }
+    return mapping.get(raw, logging.INFO)
+
+
+def _resolve_format() -> str:
+    raw = os.environ.get("LOG_FORMAT", "").lower()
+    if raw in ("json", "console"):
+        return raw
+    return "console" if sys.stdout.isatty() else "json"
+
+
+def _add_logger_name_safe(logger, method_name, event_dict):
+    """Add logger name if available; structlog's PrintLogger has no .name."""
+    name = getattr(logger, "name", None)
+    if name is not None:
+        event_dict["logger"] = name
+    return event_dict
+
+
+def configure_logging() -> None:
+    """Configure structlog and the stdlib logging bridge.
+
+    Called once at startup. Idempotent — calling twice is safe.
+    """
+    # Logs may contain non-ascii characters (e.g. unicode arrows in path
+    # arrows like "→"). On Windows, piped stdout defaults to cp1252 and
+    # blows up on those. Force utf-8 where supported.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
+    except (AttributeError, OSError, ValueError):
+        pass
+
+    level = _resolve_level()
+    output_format = _resolve_format()
+
+    timestamper = structlog.processors.TimeStamper(fmt="iso", utc=True)
+
+    shared_processors = [
+        structlog.contextvars.merge_contextvars,
+        structlog.stdlib.add_log_level,
+        _add_logger_name_safe,
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        timestamper,
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
+    ]
+
+    if output_format == "json":
+        renderer = structlog.processors.JSONRenderer()
+    else:
+        renderer = structlog.dev.ConsoleRenderer(colors=sys.stdout.isatty())
+
+    structlog.configure(
+        processors=shared_processors + [renderer],
+        wrapper_class=structlog.make_filtering_bound_logger(level),
+        logger_factory=structlog.PrintLoggerFactory(),
+        cache_logger_on_first_use=True,
+    )
+
+    # Bridge stdlib logging through structlog so existing
+    # `logging.getLogger(__name__)` users get the same output.
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(
+        structlog.stdlib.ProcessorFormatter(
+            processor=renderer,
+            foreign_pre_chain=shared_processors,
+        )
+    )
+
+    root = logging.getLogger()
+    # Replace any existing handlers so re-invocation produces single output.
+    root.handlers = [handler]
+    root.setLevel(level)

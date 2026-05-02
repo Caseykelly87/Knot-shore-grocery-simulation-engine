@@ -28,15 +28,15 @@ Stage 1 scaffolding not part of the output schema.
 from __future__ import annotations
 
 import json
-import logging
 from datetime import date, datetime, timezone
 from pathlib import Path
 
 import pandas as pd
+import structlog
 
 from knot_shore.config import GENERATOR_VERSION, GLOBAL_SEED
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # Columns to strip from dept_df before writing to CSV (Stage 1 helper cols)
 _DEPT_HELPER_COLS = {"base_margin_pct", "avg_ticket_base", "items_per_transaction", "discount_pct"}

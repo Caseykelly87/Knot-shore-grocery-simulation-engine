@@ -30,13 +30,13 @@ Application order (§5.5):
 
 from __future__ import annotations
 
-import logging
 import os
 from datetime import date
 from typing import Any
 
 import numpy as np
 import pandas as pd
+import structlog
 
 from knot_shore.config import (
     DEPARTMENTS,
@@ -60,7 +60,7 @@ from knot_shore.config import (
 )
 from knot_shore.factors import labor_pct_adjusted
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Database connection (lazy, optional)

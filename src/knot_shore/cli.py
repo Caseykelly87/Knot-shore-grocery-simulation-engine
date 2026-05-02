@@ -30,21 +30,18 @@ Commands
 from __future__ import annotations
 
 import argparse
-import logging
 import sys
 from datetime import date, timedelta
 from pathlib import Path
 
 import pandas as pd
+import structlog
 
+from knot_shore.observability import configure_logging
 from knot_shore.output import load_promotions, update_manifest
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s  %(levelname)-7s  %(message)s",
-    datefmt="%H:%M:%S",
-)
-logger = logging.getLogger(__name__)
+configure_logging()
+logger = structlog.get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
