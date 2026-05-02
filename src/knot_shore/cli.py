@@ -429,7 +429,11 @@ def _check_realism(no_realism: bool, realism_module) -> bool:
     if use_realism:
         logger.info("realism_engine_active", stage=2)
     else:
-        logger.info("realism_engine_skipped", stage=2, reason="disabled_or_unavailable")
+        logger.info(
+            "realism_engine_skipped",
+            stage=2,
+            reason="cli_flag" if no_realism else "engine_unavailable",
+        )
     return use_realism
 
 
