@@ -30,13 +30,13 @@ Application order (§5.5):
 
 from __future__ import annotations
 
-import logging
 import os
 from datetime import date
 from typing import Any
 
 import numpy as np
 import pandas as pd
+import structlog
 
 from knot_shore.config import (
     DEPARTMENTS,
@@ -60,7 +60,7 @@ from knot_shore.config import (
 )
 from knot_shore.factors import labor_pct_adjusted
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Database connection (lazy, optional)
@@ -83,7 +83,11 @@ def _get_engine() -> Any | None:
 
     db_url = os.environ.get("KNOT_SHORE_DB_URL", "").strip()
     if not db_url:
-        logger.info("KNOT_SHORE_DB_URL not set — Stage 2 (Realism Engine) skipped.")
+        logger.info(
+            "realism_engine_skipped",
+            stage=2,
+            reason="db_url_not_set",
+        )
         _DB_AVAILABLE = False
         return None
 
@@ -95,7 +99,10 @@ def _get_engine() -> Any | None:
             conn.execute(text("SELECT 1"))
         _DB_ENGINE = engine
         _DB_AVAILABLE = True
-        logger.info("Realism Engine connected to database.")
+        logger.info(
+            "realism_engine_connected",
+            stage=2,
+        )
         return _DB_ENGINE
     except Exception as exc:  # noqa: BLE001
         logger.warning(

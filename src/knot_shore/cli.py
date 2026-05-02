@@ -30,21 +30,18 @@ Commands
 from __future__ import annotations
 
 import argparse
-import logging
 import sys
 from datetime import date, timedelta
 from pathlib import Path
 
 import pandas as pd
+import structlog
 
+from knot_shore.observability import configure_logging
 from knot_shore.output import load_promotions, update_manifest
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s  %(levelname)-7s  %(message)s",
-    datefmt="%H:%M:%S",
-)
-logger = logging.getLogger(__name__)
+configure_logging()
+logger = structlog.get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -228,9 +225,13 @@ def cmd_init(seed: int, output_dir: Path) -> None:
         logger.info("Generating 4-year promotion schedule (seed=%d) …", seed)
         promos_df = generate_promotions(seed=seed)
         write_promotions(promos_df, output_dir)
-        logger.info("Promotion schedule: %d promos generated.", len(promos_df))
+        logger.info(
+            "promotions_generated",
+            command="init",
+            promo_count=len(promos_df),
+        )
 
-    logger.info("init complete.")
+    logger.info("init_complete", command="init")
 
 
 # ---------------------------------------------------------------------------
@@ -278,9 +279,10 @@ def cmd_run(
     )
 
     logger.info(
-        "run complete. %d dates newly generated (of %d attempted).",
-        len(generated),
-        len(target_dates),
+        "run_complete",
+        command="run",
+        dates_generated=len(generated),
+        dates_attempted=len(target_dates),
     )
 
 
@@ -322,10 +324,11 @@ def cmd_backfill(
     use_realism = _check_realism(no_realism, realism)
 
     logger.info(
-        "Backfill: %d dates, %s through %s.",
-        len(target_dates),
-        target_dates[0].isoformat(),
-        target_dates[-1].isoformat(),
+        "backfill_started",
+        command="backfill",
+        target_date_count=len(target_dates),
+        start_date=target_dates[0].isoformat(),
+        end_date=target_dates[-1].isoformat(),
     )
 
     generated, anomaly_summaries = _run_pipeline(
@@ -347,9 +350,10 @@ def cmd_backfill(
     )
 
     logger.info(
-        "backfill complete. %d dates newly generated (of %d attempted).",
-        len(generated),
-        len(target_dates),
+        "backfill_complete",
+        command="backfill",
+        dates_generated=len(generated),
+        dates_attempted=len(target_dates),
     )
 
 
@@ -423,9 +427,9 @@ def _check_realism(no_realism: bool, realism_module) -> bool:
     """Log realism engine status and return whether it is active."""
     use_realism = (not no_realism) and realism_module.is_available(force_disable=no_realism)
     if use_realism:
-        logger.info("Stage 2 (Realism Engine) active.")
+        logger.info("realism_engine_active", stage=2)
     else:
-        logger.info("Stage 2 (Realism Engine) inactive — outputting base data.")
+        logger.info("realism_engine_skipped", stage=2, reason="disabled_or_unavailable")
     return use_realism
 
 
