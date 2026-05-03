@@ -56,3 +56,35 @@ class TestConfigureLogging:
             output = buf.getvalue()
             assert "info_message" not in output
             assert "warn_message" in output
+
+    def test_stdlib_extra_kwarg_fields_appear_in_output(self):
+        """Verify the stdlib bridge propagates extra={} fields to the renderer.
+
+        Without structlog.stdlib.ExtraAdder() in the shared processor chain,
+        ProcessorFormatter silently drops attributes injected via extra={};
+        the rendered output omits them. This test guards against that
+        regression.
+        """
+        import logging as stdlib_logging
+
+        with patch.dict(os.environ, {"LOG_FORMAT": "json"}, clear=False):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                # configure_logging() must run inside redirect_stdout so the
+                # stdlib bridge's StreamHandler binds to buf rather than the
+                # real sys.stdout (the handler captures the stream reference
+                # at __init__ time, unlike structlog's PrintLogger which
+                # resolves sys.stdout lazily).
+                configure_logging()
+                stdlib_logging.info(
+                    "extra_kwarg_test",
+                    extra={"series_id": "PCEC", "status": "updated", "row_count": 42},
+                )
+            line = buf.getvalue().strip().split("\n")[-1]
+            assert line, "expected at least one line of json output"
+            payload = json.loads(line)
+            assert payload["event"] == "extra_kwarg_test"
+            assert payload["series_id"] == "PCEC"
+            assert payload["status"] == "updated"
+            assert payload["row_count"] == 42
+            assert payload["level"] == "info"
