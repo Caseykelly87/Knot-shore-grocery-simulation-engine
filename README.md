@@ -1,155 +1,223 @@
 # Knot Shore Grocery — Simulation Engine
 
-A Python-based daily operational data generator for **Knot Shore Grocery**, a fictional
-8-store grocery chain in the St. Louis, MO metropolitan area.
+Synthetic data generator for Knot Shore Grocery, a fictional 8-store grocery chain in the St. Louis metropolitan area. Produces deterministic store and department-level retail data with injected anomalies and ground-truth labels. The output is the upstream source for a four-repo analytics platform — an ETL pipeline ingests it, an API serves the result as JSON, and a Next.js portal renders stakeholder dashboards.
 
----
+## Table of contents
 
-## Purpose
+- [What it does](#what-it-does)
+- [Quick start](#quick-start)
+- [Commands](#commands)
+- [Three-stage pipeline](#three-stage-pipeline)
+- [Determinism](#determinism)
+- [Anomaly injection](#anomaly-injection)
+- [Output structure](#output-structure)
+- [Realism layer (Stage 2)](#realism-layer-stage-2)
+- [Logging](#logging)
+- [Testing](#testing)
+- [Where this fits in the platform](#where-this-fits-in-the-platform)
 
-This engine is a **data utility**, not the portfolio project. It generates realistic mock
-operational data that a separate Airflow-based ETL pipeline ingests, transforms, and joins
-with real BLS/FRED/ERS economic indicators. The portfolio value lives in the ETL pipeline,
-data modeling, and analysis dashboards.
+## What it does
 
----
+The engine generates synthetic daily operational data for 8 stores: per-store summaries (revenue, transactions, average basket, labor cost percentage) and per-store-department detail (net sales, transactions, units sold, gross margin percentage). Output is a tree of CSV files under `output/daily/{MM}/{DD}/{YYYY}/` that downstream pipeline stages ingest.
 
-## How It Works
+Each generated date is seeded deterministically — the same seed and date produces byte-identical output across runs, machines, and operating systems. The platform's paired-year canonical fixtures depend on this property.
 
-Each run generates data for **8 dates**:
-
-| Date | Description |
-|------|-------------|
-| Today (anchor) | Current calendar date |
-| anchor − 1 day | Yesterday |
-| anchor − 2 days | Two days ago |
-| anchor − 3 days | Three days ago |
-| anchor − 4 days | Four days ago |
-| anchor − 5 days | Five days ago |
-| anchor − 6 days | Six days ago |
-| anchor − 1 year | Same calendar date, one year prior |
-
-Running the engine daily fills in the trailing seven-day window as it advances,
-while always keeping the one-year-ago comparison date current.  Folders that
-already exist on disk are skipped automatically — re-running is safe.
-
-For one-shot historical backfills, see [Historical Backfill](#historical-backfill) below.
-
-### Three-Stage Pipeline
-
-```
-Stage 1: BASE GENERATION    →  Stage 2: REALISM ENGINE       →  Stage 3: OUTPUT
-Economically-blind waterfall   Economic multipliers from         Write CSVs and
-using seasonality, DOW,        real FRED/BLS/ERS data            store reports
-promos, and noise              (optional — skipped if no DB)
-```
-
----
-
-## Quick Start
-
-### 1. Install
+## Quick start
 
 ```bash
+# Install
 pip install -e .
-# For realism engine support (requires Postgres):
+
+# For Stage 2 realism layer (requires Postgres driver)
 pip install -e ".[realism]"
-# For development / testing:
+
+# For development / testing
 pip install -e ".[dev]"
+
+# Initialize (run once per fresh output directory)
+python -m knot_shore init --seed 42 --output ./output
+
+# Generate daily data — anchor is today, generates today + 6 trailing days + same date one year prior
+python -m knot_shore run --seed 42 --output ./output
+
+# Or backfill a contiguous historical window
+python -m knot_shore backfill --start-date 2025-07-01 --days 184 --output ./output
 ```
 
-### 2. Initialize (run once)
+After `init`, output contains dimension tables (stores, departments, calendar) and a four-year promotion schedule. Subsequent `run` or `backfill` invocations populate the daily data tree.
 
-Generates dimension tables and the full 4-year promotion schedule.
+Python 3.11+ is required. Runtime dependencies: `faker>=19`, `numpy>=1.26`, `pandas>=2.1`, `structlog>=24`. The realism extras add `sqlalchemy>=2` and `psycopg2-binary>=2.9`.
+
+## Commands
+
+The CLI has four commands. Run any of them with `--help` for full argument details.
+
+### `init`
+
+Generates dimension tables (`dim_stores.csv`, `dim_departments.csv`, `dim_calendar.csv`) and the full four-year promotion schedule. Idempotent — files that already exist are skipped. Run once per fresh output directory.
 
 ```bash
 python -m knot_shore init --seed 42 --output ./output
 ```
 
-### 3. Daily Run
+### `run`
+
+Generates daily data for 8 dates: an anchor date (defaults to today; override with `--date`), the 6 preceding days, and the same calendar date one year prior. Running daily fills in the trailing seven-day window and keeps the year-ago comparison current; date directories that already exist are skipped, so re-running is safe.
 
 ```bash
-# Anchor = today: generates today, the six preceding days, and the same date one year ago
+# Anchor = today
 python -m knot_shore run --seed 42 --output ./output
 
-# Specific anchor date
-python -m knot_shore run --date 2026-03-28 --seed 42 --output ./output
+# Specific anchor
+python -m knot_shore run --date 2025-12-31 --seed 42 --output ./output
 
-# Force-disable realism engine (even if DB_URL is set)
+# Force-disable Stage 2 even if KNOT_SHORE_DB_URL is set
 python -m knot_shore run --seed 42 --output ./output --no-realism
 ```
 
-### 4. Historical Backfill
+The `run` command also generates per-store reports under `output/reports/YYYY-MM-DD/` for the anchor date only.
 
-For demo, fixture, and portfolio purposes, the engine can generate a contiguous
-range of historical dates in a single invocation. This is the mode used to
-populate the canonical fixtures consumed by the downstream ETL → API → portal
-pipeline.
+### `backfill`
 
-The default canonical window is **2025-07-01 through 2025-12-31** — six months
-ending on December 31, 2025. This window aligns with the period for which macro
-economic data (FRED CPI, BLS unemployment, USDA ERS food retail) is reliably
-available downstream. The canonical window may shift in future regenerations as
-new economic data becomes available; today's default is fixed for reference.
+Generates a contiguous historical date range in a single invocation. No T-365 paired generation, no per-store reports — backfill is for filling explicit windows.
 
 ```bash
-# Default — generates 2025-07-02 through 2025-12-31 (184 days)
+# Default — generates 2025-07-01 through 2025-12-31 (184 days, the canonical demo window)
 python -m knot_shore backfill --output ./output
 
-# Override with end date — six months ending given date
-python -m knot_shore backfill --end-date 2025-09-30 --output ./output
+# Override start date — extends forward by --days
+python -m knot_shore backfill --start-date 2024-07-01 --days 184 --output ./output
 
-# Override with start date — six months starting given date
-python -m knot_shore backfill --start-date 2025-07-01 --output ./output
+# Override end date — extends backward by --days
+python -m knot_shore backfill --end-date 2025-09-30 --days 184 --output ./output
 
-# Custom window length (works with either start or end)
-python -m knot_shore backfill --days 30 --end-date 2025-12-31 --output ./output
+# Disable Stage 2 for the whole window
+python -m knot_shore backfill --output ./output --no-realism
 ```
 
-`--start-date` and `--end-date` are mutually exclusive — provide at most one.
+`--start-date` and `--end-date` are mutually exclusive. Both default to the canonical window if neither is provided. The `--days` argument controls the window length.
 
-Notes:
+### `reports`
 
-- Backfill does **not** generate store reports. Reports are designed to summarize
-  a single anchor date; running them across hundreds of days would be wrong scope.
-  Use `python -m knot_shore reports --date <YYYY-MM-DD>` separately if needed.
-- Re-running is safe: any date folder that already exists on disk is skipped.
-- This mode produces the canonical fixtures that flow downstream to the ETL,
-  API, and portal repositories.
-
-### 5. Reports Only
+(Re-)generates the per-store report files for a specific date. Requires that daily CSV data already exists for that date.
 
 ```bash
-python -m knot_shore reports --date 2026-03-28 --output ./output
+python -m knot_shore reports --date 2025-12-31 --output ./output
 ```
 
----
+## Three-stage pipeline
+
+Each generated date passes through three stages in order:
+
+```
+Stage 1: BASE GENERATION    →   Stage 2: REALISM LAYER       →   Stage 3: ANOMALY INJECTION → OUTPUT
+Economically-blind waterfall    Economic multipliers from        Inject up to 4 types of
+using seasonality, day-of-week, real FRED/BLS economic data      data integrity anomalies,
+promotions, and noise.          (skipped when DB unavailable     write CSVs and ground-truth
+                                or --no-realism is passed).      anomaly_log.csv.
+```
+
+Stage 2 is optional. If `KNOT_SHORE_DB_URL` is unset or the connection fails, the engine logs a skip message and Stage 2 is bypassed. Base data is written to disk as-is.
+
+Stage 3 always runs. The `anomaly_log.csv` file is written for every date, even when no anomalies are injected (in which case the file contains only its header row).
+
+## Determinism
+
+The engine seeds each generated day with a deterministic function of the global seed and the target date:
+
+```python
+date_seed = global_seed + target_date.toordinal()
+rng = np.random.default_rng(date_seed)
+```
+
+Implications:
+
+- A given date's output depends only on `(global_seed, date)`, not on what came before in the run, not on the order of the date list, not on whether realism was enabled for an earlier date.
+- Regenerating any single date in isolation produces the same data as generating it as part of a larger backfill.
+- The platform's paired-year canonical fixtures rely on this: a 2024-07-01 file produced by `backfill --start-date 2024-07-01` is byte-identical to a 2024-07-01 file produced by `run --date 2025-07-01` (which generates the t-365 paired data).
+
+A test in `tests/test_deterministic_seed.py` asserts byte-identity across two successive runs of the same seed. This is the single most important property the test suite verifies.
+
+## Anomaly injection
+
+On each generated date, per store there is a 5% probability of injecting one anomaly. Only one anomaly type is injected per store-date when fired. Anomaly types and their relative weights:
+
+| Type | Weight | Description |
+|---|---:|---|
+| `integrity_breach` | 40% | `net_sales` is forced to differ from `gross_sales − discount_amount` by a small offset. The summary row's totals are recomputed from departments, so this surfaces as a header-vs-detail mismatch. |
+| `missing_department` | 30% | One department row is removed from the daily output, leaving the summary row referring to a department that doesn't appear in the detail. |
+| `margin_outlier` | 20% | One department's `gross_margin_pct` is set to an unrealistically high value (above 0.95) or low value (below 0.05). |
+| `duplicate_row` | 10% | One department row is duplicated exactly, inflating that department's totals on that date. |
+
+The ground-truth `anomaly_log.csv` records every injection: date, store_id, anomaly_type, and any per-type details (e.g., the affected department_id). The platform's downstream detection rules (in `economic-data-etl`) look for statistical anomalies — sales bands, transaction bands, year-over-year ratios — which is a different set of phenomena than what's injected here. The injection log is the platform's ground truth for evaluating detection quality, but no platform code reads it at runtime; only the upstream `economic-data-etl/scripts/evaluate_detection.py` reads it.
+
+Seeding for injection uses the same per-date scheme as Stage 1 with an offset: `date_seed + 1_000_000`. Determinism holds.
+
+## Output structure
+
+```
+output/
+├── dimensions/
+│   ├── dim_stores.csv          # 8 rows: store_id, store_name, address, city, etc.
+│   ├── dim_departments.csv     # 10 rows: department_id, department_name
+│   └── dim_calendar.csv
+├── promotions/
+│   └── promotions.csv          # 4-year promotion schedule
+├── daily/
+│   └── {MM}/                   # Month (01–12)
+│       └── {DD}/               # Day of month (01–31)
+│           └── {YYYY}/         # Year
+│               ├── store_summary.csv       # 8 rows per file (one per store)
+│               ├── department_sales.csv    # ~80 rows per file (8 stores × 10 departments)
+│               └── anomaly_log.csv         # 0+ rows per file (always written)
+├── reports/                    # Generated by `run` for the anchor date only
+│   └── YYYY-MM-DD/
+│       └── store_NNN_report.txt
+└── manifest.json               # Run history; updated by every command
+```
+
+The date-tree layout (`{MM}/{DD}/{YYYY}/`) is the contract consumed by the upstream ETL repo's source adapter. The adapter walks this tree, validates each file's schema, and ingests the rows into canonical parquet artifacts.
+
+## Realism layer (Stage 2)
+
+When the environment variable `KNOT_SHORE_DB_URL` is set, Stage 2 connects to a Postgres database and applies multipliers derived from real macroeconomic data:
+
+```bash
+export KNOT_SHORE_DB_URL=postgresql://user:pass@host:5432/dbname
+```
+
+The expected database is the one populated by the upstream `economic-data-etl` repository's macro pipeline (FRED, BLS, ERS series). Stage 2 reads economic indicators that the macro pipeline has loaded — Consumer Price Index (food at home), University of Michigan Consumer Sentiment, unemployment rate, average wages, and per-category CPI series — and applies them as multipliers to the base data:
+
+- `ERS_FOOD_HOME`, `SENTIMENT`, `UNRATE` → sales volume multiplier
+- `ERS_*` per-category CPI → margin pressure per department
+- `AVG_WAGES` → labor cost multiplier
+
+If the connection fails or the variable is unset, the engine logs a skip and writes Stage 1 output as-is. The `--no-realism` flag forces Stage 2 to skip even when the database is reachable, useful for pure synthetic data without macro context.
+
+The cross-repo dependency is real: running Stage 2 against a freshly-cloned platform requires the upstream ETL's macro pipeline to have run at least once and populated the database. For most demo and development workflows, `--no-realism` is the appropriate path — Stage 1's output alone is the canonical demo data downstream consumers see.
 
 ## Logging
 
-Pipeline runs emit structured logs via [structlog](https://www.structlog.org/).
-Output is human-readable colored text when stdout is a tty, single-line JSON
-otherwise. Log level and format can both be overridden via environment
-variables:
+The engine emits structured logs via [structlog](https://www.structlog.org/). Output is human-readable colored text when stdout is a tty, single-line JSON otherwise. Format and verbosity are controlled by environment variables:
 
 | Variable | Values | Default |
 |---|---|---|
 | `LOG_LEVEL` | `debug`, `info`, `warning`, `error`, `critical` | `info` |
 | `LOG_FORMAT` | `console`, `json` | auto (console if tty, else json) |
 
-Example console output (default in a terminal):
+Console output:
 
 ```
-2025-12-31T17:34:42.118Z [info     ] backfill_started               command=backfill target_date_count=183 start_date=2025-07-02 end_date=2025-12-31
+2025-12-31T17:34:42.118Z [info     ] backfill_started               command=backfill target_date_count=184 start_date=2025-07-01 end_date=2025-12-31
 ```
 
-Example JSON output (default when piped or redirected, or when `LOG_FORMAT=json`):
+JSON output:
 
 ```json
-{"event": "backfill_started", "command": "backfill", "target_date_count": 183, "start_date": "2025-07-02", "end_date": "2025-12-31", "level": "info", "logger": "knot_shore.cli", "timestamp": "2025-12-31T17:34:42.118Z"}
+{"event": "backfill_started", "command": "backfill", "target_date_count": 184, "start_date": "2025-07-01", "end_date": "2025-12-31", "level": "info", "logger": "knot_shore.cli", "timestamp": "2025-12-31T17:34:42.118Z"}
 ```
 
-To debug a failing pipeline run:
+To debug a failing run:
 
 ```bash
 LOG_LEVEL=debug python -m knot_shore backfill --output ./output --no-realism
@@ -161,105 +229,48 @@ To capture structured logs for offline analysis:
 LOG_FORMAT=json python -m knot_shore backfill --output ./output --no-realism > run.log
 ```
 
----
+The structlog configurator lives in `src/knot_shore/observability.py`. It uses an stdlib bridge with `structlog.stdlib.ExtraAdder()` so calls like `logging.info("foo", extra={"k": "v"})` propagate the structured fields through to the rendered output.
 
-## Realism Engine
-
-Set `KNOT_SHORE_DB_URL` to connect to the ETL pipeline's Postgres database:
+## Testing
 
 ```bash
-export KNOT_SHORE_DB_URL=postgresql://user:pass@host:5432/dbname
+# Run all tests
+python -m pytest
+
+# Verbose
+python -m pytest -v
+
+# Coverage report
+python -m pytest --cov=src/knot_shore --cov-report=term-missing
 ```
 
-If unset or the connection fails, Stage 2 is skipped and base data is written as-is.
+The test suite has 122 tests covering:
 
----
+- **Determinism** — byte-identity across successive runs of the same seed (the single most important property).
+- **Anomaly injection** — bounded rate (5% per store-day) verified against tolerance, ground-truth log integrity.
+- **Pipeline contracts** — Stage 1 → Stage 2 → Stage 3 composition; the `--no-realism` opt-out path produces base data identical to what realism would have received.
+- **CLI surface** — argument parsing, mutual exclusion, command dispatch.
+- **Output integrity** — directory layout, file presence, summary-vs-detail reconciliation.
+- **Date resolution** — `run` produces 8 dates (anchor + 6 trailing + t-365); `backfill` produces a contiguous range with no t-365.
 
-## Output Structure
+No live network or database calls are made. The realism layer is exercised against test doubles. CI runs the full suite on every push.
 
-```
-output/
-├── dimensions/
-│   ├── dim_stores.csv
-│   ├── dim_departments.csv
-│   └── dim_calendar.csv
-├── promotions/
-│   └── promotions.csv
-├── daily/
-│   └── {MM}/                   # Month (01–12)
-│       └── {DD}/               # Day of month (01–31)
-│           └── {YYYY}/
-│               ├── department_sales.csv
-│               ├── store_summary.csv
-│               └── anomaly_log.csv
-├── reports/
-│   └── YYYY-MM-DD/
-│       └── store_NNN_report.txt
-└── manifest.json
-```
+## Where this fits in the platform
 
-This layout groups all years' data for the same calendar date together.
-`daily/06/15/` holds year subdirectories side by side, making year-over-year
-comparison browsing natural and aligning with how the ETL pipeline ingests
-daily file drops.
-
----
-
-## Project Structure
+The simulation engine is the upstream end of a four-repo data platform:
 
 ```
-src/knot_shore/
-├── config.py          # All constants: store profiles, department shares, multipliers
-├── dimensions.py      # dim_stores, dim_departments, dim_calendar generators
-├── promotions.py      # Full 4-year promotion schedule generator
-├── factors.py         # Seasonal, DOW, SNAP, YoY factor lookups
-├── sales_generator.py # Core waterfall — Stage 1
-├── realism.py         # Realism engine — Stage 2 (optional)
-├── anomalies.py       # Anomaly injection (post-realism, pre-output)
-├── reports.py         # Plain-text store report generator
-├── output.py          # CSV writer and manifest updater — Stage 3
-├── date_resolver.py   # Resolves the eight target dates for a run
-└── cli.py             # Entry point: orchestrates Stage 1 → 2 → 3
+knot-shore-grocery-simulation-engine    →    economic-data-etl    →    economic-data-api    →    knot-shore-portal
+(this repo)                                  ingestion + detection      service layer              dashboards
+                                                                                                    + docs hub
 ```
 
----
+The engine produces CSV files under `output/daily/{MM}/{DD}/{YYYY}/`. The ETL repo reads that tree, validates schemas, transforms into canonical parquet artifacts, and applies static-band detection rules. The API serves the canonical artifacts as JSON. The portal consumes the API and renders three primary dashboards plus an architectural documentation hub.
 
-## Tests
+Reader-grade documentation for the engine — determinism, anomaly injection, paired-year mechanics — lives at the portal's [`/about/sim-engine`](https://github.com/Caseykelly87/knot-shore-portal) page. The platform-wide architectural narrative is at [`/about/architecture`](https://github.com/Caseykelly87/knot-shore-portal); decision records are at [`/about/decisions`](https://github.com/Caseykelly87/knot-shore-portal).
 
-```bash
-pytest
-pytest --cov=knot_shore
-```
+Adjacent repositories:
 
-Test suite covers waterfall integrity, summary/detail consistency, output ranges,
-promo overlap, calendar correctness, anomaly behavior, deterministic seeding,
-realism engine skip/clamp behavior, date resolver logic, and CLI parser surface.
-
----
-
-## Validation Benchmarks
-
-| Metric | Expected Range |
-|--------|---------------|
-| Annual revenue per store | $18M–$42M |
-| Daily revenue per store | $50K–$115K |
-| Chain gross margin | 28–32% |
-| Avg ticket | $25–$45 |
-| Transactions per store/day | 1,200–3,500 |
-| Labor cost as % of net sales | 10–13% |
-| YoY comp sales growth | 1.5–4.0% |
-
----
-
-## Stores
-
-| # | Store | City | Profile |
-|---|-------|------|---------|
-| 1 | Knot Shore — Kirkwood | Kirkwood | Suburban-Family |
-| 2 | Knot Shore — Chesterfield | Chesterfield | Suburban-Family |
-| 3 | Knot Shore — Oakville | Oakville | Suburban-Family |
-| 4 | Knot Shore — Central West End | St. Louis | Urban-Dense |
-| 5 | Knot Shore — Soulard | St. Louis | Urban-Dense |
-| 6 | Knot Shore — Tower Grove | St. Louis | Urban-Dense |
-| 7 | Knot Shore — North County | Jennings | Value-Market |
-| 8 | Knot Shore — South City | St. Louis | Value-Market |
+- [`economic-data-etl`](https://github.com/Caseykelly87/economic-data-etl) — ingests this engine's output into canonical parquet artifacts; runs the macro-economic pipeline that populates the database Stage 2 reads from.
+- [`economic-data-api`](https://github.com/Caseykelly87/economic-data-api) — serves the canonical artifacts as JSON via FastAPI.
+- [`knot-shore-portal`](https://github.com/Caseykelly87/knot-shore-portal) — Next.js 14 application with three primary dashboards and the platform's `/about/*` documentation hub.
