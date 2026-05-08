@@ -3,9 +3,10 @@ cli.py — Entry point: orchestrates Stage 1 → Stage 2 → Anomaly Injection �
 
 Usage
 -----
-  python -m knot_shore init    --seed 42 --output ./output
-  python -m knot_shore run     --seed 42 --output ./output [--date YYYY-MM-DD] [--no-realism]
-  python -m knot_shore reports --date YYYY-MM-DD --output ./output
+  python -m knot_shore init     --seed 42 --output ./output
+  python -m knot_shore run      --seed 42 --output ./output [--date YYYY-MM-DD] [--no-realism]
+  python -m knot_shore backfill --seed 42 --output ./output [--start-date YYYY-MM-DD | --end-date YYYY-MM-DD] [--days N] [--no-realism]
+  python -m knot_shore reports  --date YYYY-MM-DD --output ./output
 
 Commands
 --------
@@ -21,6 +22,13 @@ Commands
     anomaly injection → Stage 3.
     Generate store reports for the anchor date only.
     Update manifest.json.
+
+  backfill
+    Generate a contiguous historical date range (no T-365). Defaults
+    to the canonical 2025-07-01 through 2025-12-31 window. Anchor
+    either edge with --start-date or --end-date (mutually exclusive)
+    and length with --days. Reuses the same Stage 1 → Stage 2 → anomaly
+    → Stage 3 pipeline as `run`; does not generate store reports.
 
   reports
     (Re-)generate store report files for a specific date.
