@@ -62,23 +62,8 @@ def promo_volume_factor(
     if promos_df.empty:
         return (1.0, 0.0, False)
 
-    # Find promos for this department where start_date <= target_date <= end_date
-    mask = (
-        (promos_df["department_id"].isin(
-            promos_df.loc[
-                promos_df.get("department_name", pd.Series(dtype=str)) == department_name,
-                "department_id",
-            ]
-        ))
-        if "department_name" in promos_df.columns
-        else pd.Series([True] * len(promos_df))
-    )
-
-    # Filter by department name if the column exists, otherwise use department_id lookup
-    # The promos_df contains department_id; we need to match by department_name via DEPARTMENTS.
-    # To keep factors.py self-contained we accept either a df with department_name or one
-    # that has already been pre-filtered by the caller. The canonical approach: filter by
-    # start_date and end_date then check department_name if present.
+    # Resolve the department mask: prefer department_name when the caller supplied
+    # it, otherwise look up department_id via the DEPARTMENTS config.
     if "department_name" in promos_df.columns:
         dept_mask = promos_df["department_name"] == department_name
     else:
