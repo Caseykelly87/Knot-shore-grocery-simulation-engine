@@ -179,7 +179,6 @@ def generate_store_report(
         f"{'Department':<26} {'Net Sales':>10} {'Margin%':>8} {'Transactions':>13}",
     ]
 
-    net_total_check = 0.0
     txn_total_check = 0
 
     for _, dept_row in store_dept.iterrows():
@@ -193,7 +192,6 @@ def generate_store_report(
         margin = float(dept_row["gross_margin_pct"])
         txns = int(dept_row["transactions"])
 
-        net_total_check += net
         txn_total_check += txns
 
         lines.append(
@@ -202,11 +200,11 @@ def generate_store_report(
 
     lines.append("\u2500" * 57)
 
-    # Store total line — use the summary values (which may differ if anomaly injected)
-    net_total = float(summary_row["net_sales_total"])
+    # Store total line — derive net sales, margin, and transaction totals from the
+    # department rows actually displayed; the summary_row totals would diverge after
+    # anomaly injection rewrites a single department's cogs / gross_margin.
     labor = float(summary_row["labor_cost"])
     labor_pct = float(summary_row["labor_cost_pct"])
-    txn_total = int(summary_row["transactions_total"])
 
     # Overall margin: derive from the department rows actually displayed
     gross_total_display = float(store_dept["gross_sales"].sum())
