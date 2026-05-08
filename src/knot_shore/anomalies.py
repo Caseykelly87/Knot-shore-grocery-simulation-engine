@@ -241,8 +241,8 @@ def _inject_margin_outlier(
         # Very high margin: cogs ≈ 0
         extreme_cogs = (dept_df.loc[mask, "net_sales"] * 0.05).round(2)
         description = (
-            f"Margin outlier (>85%) injected for store {store_id} dept {dept_id} "
-            f"(cogs = 5% of net_sales)"
+            f"Margin outlier (gross_margin_pct = 0.95) injected for store {store_id} "
+            f"dept {dept_id} (cogs = 5% of net_sales)"
         )
 
     dept_df.loc[mask, "cogs"] = extreme_cogs

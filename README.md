@@ -146,7 +146,7 @@ On each generated date, per store there is a 5% probability of injecting one ano
 |---|---:|---|
 | `integrity_breach` | 40% | `net_sales` is forced to differ from `gross_sales − discount_amount` by a small offset. The summary row's totals are recomputed from departments, so this surfaces as a header-vs-detail mismatch. |
 | `missing_department` | 30% | One department row is removed from the daily output, leaving the summary row referring to a department that doesn't appear in the detail. |
-| `margin_outlier` | 20% | One department's `gross_margin_pct` is set to an unrealistically high value (above 0.95) or low value (below 0.05). |
+| `margin_outlier` | 20% | One department's `gross_margin_pct` is set to an unrealistically high value (0.95, when cogs collapses to 5% of net sales) or a negative value (when cogs is inflated to 1.05–1.30× net sales). |
 | `duplicate_row` | 10% | One department row is duplicated exactly, inflating that department's totals on that date. |
 
 The ground-truth `anomaly_log.csv` records every injection: date, store_id, anomaly_type, and any per-type details (e.g., the affected department_id). The platform's downstream detection rules (in `economic-data-etl`) look for statistical anomalies — sales bands, transaction bands, year-over-year ratios — which is a different set of phenomena than what's injected here. The injection log is the platform's ground truth for evaluating detection quality, but no platform code reads it at runtime; only the upstream `economic-data-etl/scripts/evaluate_detection.py` reads it.
