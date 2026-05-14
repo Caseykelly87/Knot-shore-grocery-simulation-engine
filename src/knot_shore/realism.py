@@ -125,10 +125,10 @@ def _load_series(engine: Any, series_key: str) -> pd.DataFrame:
         from sqlalchemy import text  # noqa: PLC0415
 
         query = """
-            SELECT series_date AS date, value
-            FROM economic_series
-            WHERE series_key = :key
-            ORDER BY series_date ASC
+            SELECT date, value
+            FROM raw.fact_economic_observations
+            WHERE series_name = :key
+            ORDER BY date ASC
         """
         with engine.connect() as conn:
             result = conn.execute(text(query), {"key": series_key})
