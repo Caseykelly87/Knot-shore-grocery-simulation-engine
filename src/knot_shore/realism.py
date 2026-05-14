@@ -1,11 +1,25 @@
 """
 realism.py — Stage 2: Realism Engine.
 
-Reads real economic series from the ETL pipeline's Postgres database and
-applies multipliers to the base-generated DataFrames.  If the database is
-unavailable, Stage 2 is skipped and base data is returned unchanged.
+Reads real economic series and applies multipliers to the base-generated
+DataFrames. The data source is resolved once per run via a three-tier
+precedence:
 
-Connection: set KNOT_SHORE_DB_URL environment variable.
+  1. Database — if KNOT_SHORE_DB_URL is set, the database is reachable,
+     and raw.fact_economic_observations supplies the full realism series
+     set, the database is used.
+  2. Bundled fixture — if the database is unavailable or incomplete, the
+     bundled parquet fixture at seed_data/economic/ is used for the
+     whole run. Falling back is logged at warning level so a person
+     running in what they think is "live" mode sees the degraded path.
+  3. Skip — if both are absent, Stage 2 is skipped and base data is
+     returned unchanged. This is a broken-install state, not a normal
+     operating mode.
+
+Whole-layer fallback: the decision is made once per call to adjust();
+sources are never mixed within a run.
+
+Connection (DB path): set KNOT_SHORE_DB_URL.
   e.g. postgresql://user:pass@host:5432/dbname
 
 Series used (§5.3):
@@ -14,24 +28,13 @@ Series used (§5.3):
   UNRATE        — unemployment rate  → sales volume multiplier
   ERS_*         — category-level CPI → margin pressure per department
   AVG_WAGES     — average wages      → labor cost multiplier
-
-Application order (§5.5):
-  1. Query all series for target dates (cached per run)
-  2. Apply sales_volume_multiplier → gross_sales
-  3. Recalculate derivation chain (§4.10 steps 2-10); RNG seeded as
-     global_seed + target_date.toordinal() + 999_999 to stay decorrelated
-     from Stage 1 and anomaly injection while honoring --seed
-  4. Apply margin_pressure per department (additive adjustment to base_margin_pct)
-  5. Recalculate cogs, gross_margin, gross_margin_pct (steps 4-6)
-  6. Re-aggregate store_summary from adjusted dept_sales
-  7. Apply labor_cost_multiplier → labor_cost
-  8. Recalculate labor_cost_pct
 """
 
 from __future__ import annotations
 
 import os
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -53,7 +56,13 @@ from knot_shore.config import (
     REALISM_WAGES_COEFF,
     SERIES_AVG_WAGES,
     SERIES_ERS_ALL_FOOD,
+    SERIES_ERS_BEVERAGES,
+    SERIES_ERS_CEREALS,
+    SERIES_ERS_DAIRY,
+    SERIES_ERS_FOOD_AWAY,
     SERIES_ERS_FOOD_HOME,
+    SERIES_ERS_FRUITS_VEG,
+    SERIES_ERS_MEATS,
     SERIES_SENTIMENT,
     SERIES_UNRATE,
     STORES,
@@ -63,19 +72,63 @@ from knot_shore.factors import labor_pct_adjusted
 logger = structlog.get_logger(__name__)
 
 # ---------------------------------------------------------------------------
-# Database connection (lazy, optional)
+# Series the realism layer requires from any data source. Both the DB-query
+# path and the bundled fixture must supply every name in this set, otherwise
+# the source is considered incomplete.
+# ---------------------------------------------------------------------------
+
+REALISM_SERIES: frozenset[str] = frozenset(
+    {
+        SERIES_SENTIMENT,
+        SERIES_UNRATE,
+        SERIES_AVG_WAGES,
+        SERIES_ERS_ALL_FOOD,
+        SERIES_ERS_FOOD_HOME,
+        SERIES_ERS_FOOD_AWAY,
+        SERIES_ERS_CEREALS,
+        SERIES_ERS_MEATS,
+        SERIES_ERS_DAIRY,
+        SERIES_ERS_FRUITS_VEG,
+        SERIES_ERS_BEVERAGES,
+    }
+)
+
+# ---------------------------------------------------------------------------
+# Bundled fixture location (offline-mode data source).
+# ---------------------------------------------------------------------------
+
+# src/knot_shore/realism.py → parents[2] is the repo root
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+BUNDLED_FIXTURE_PATH: Path = _REPO_ROOT / "seed_data" / "economic" / "economic_observations.parquet"
+
+# ---------------------------------------------------------------------------
+# Module-level state (cleared by clear_cache())
 # ---------------------------------------------------------------------------
 
 _DB_ENGINE: Any = None       # sqlalchemy Engine or None
 _DB_AVAILABLE: bool | None = None  # None means not yet checked
 
-# In-memory caches cleared by clear_cache()
+# Source resolution state for the current run.
+# "database" / "bundled_fixture" / "none" / None (not yet resolved)
+_SOURCE: str | None = None
+_FIXTURE_FRAME: pd.DataFrame | None = None  # full parquet, loaded once
+
+# Per-series caches (populated lazily once a source is resolved)
 _series_cache: dict[str, pd.DataFrame] = {}
 _baseline_cache: dict[str, float] = {}
 
 
+# ---------------------------------------------------------------------------
+# Database connection (lazy, optional)
+# ---------------------------------------------------------------------------
+
 def _get_engine() -> Any | None:
-    """Return a SQLAlchemy engine if KNOT_SHORE_DB_URL is set and reachable."""
+    """Return a SQLAlchemy engine if KNOT_SHORE_DB_URL is set and reachable.
+
+    Does not emit user-facing logs about resolved state — that is the job
+    of _resolve_source(). This helper only reports low-level connection
+    failures.
+    """
     global _DB_ENGINE, _DB_AVAILABLE
 
     if _DB_AVAILABLE is not None:
@@ -83,11 +136,6 @@ def _get_engine() -> Any | None:
 
     db_url = os.environ.get("KNOT_SHORE_DB_URL", "").strip()
     if not db_url:
-        logger.info(
-            "realism_engine_skipped",
-            stage=2,
-            reason="db_url_not_set",
-        )
         _DB_AVAILABLE = False
         return None
 
@@ -99,28 +147,23 @@ def _get_engine() -> Any | None:
             conn.execute(text("SELECT 1"))
         _DB_ENGINE = engine
         _DB_AVAILABLE = True
-        logger.info(
-            "realism_engine_connected",
-            stage=2,
-        )
         return _DB_ENGINE
     except Exception as exc:  # noqa: BLE001
         logger.warning(
-            "Realism Engine: database connection failed (%s) — Stage 2 skipped.", exc
+            "realism_db_connect_failed",
+            stage=2,
+            error=str(exc),
         )
         _DB_AVAILABLE = False
         return None
 
 
 # ---------------------------------------------------------------------------
-# Series lookup helpers
+# Database series loading (unchanged SQL)
 # ---------------------------------------------------------------------------
 
-def _load_series(engine: Any, series_key: str) -> pd.DataFrame:
-    """Load a monthly series from the DB as a DataFrame with columns [date, value]."""
-    if series_key in _series_cache:
-        return _series_cache[series_key]
-
+def _load_series_from_db(engine: Any, series_key: str) -> pd.DataFrame:
+    """Load a series from raw.fact_economic_observations as [date, value]."""
     try:
         from sqlalchemy import text  # noqa: PLC0415
 
@@ -135,14 +178,207 @@ def _load_series(engine: Any, series_key: str) -> pd.DataFrame:
             rows = result.fetchall()
 
         if not rows:
-            df = pd.DataFrame(columns=["date", "value"])
-        else:
-            df = pd.DataFrame(rows, columns=["date", "value"])
-            df["date"] = pd.to_datetime(df["date"]).dt.date
-            df = df.sort_values("date").reset_index(drop=True)
+            return pd.DataFrame(columns=["date", "value"])
+
+        df = pd.DataFrame(rows, columns=["date", "value"])
+        df["date"] = pd.to_datetime(df["date"]).dt.date
+        df = df.sort_values("date").reset_index(drop=True)
+        return df
 
     except Exception as exc:  # noqa: BLE001
-        logger.warning("Could not load series %s: %s", series_key, exc)
+        logger.warning("realism_db_load_failed", series=series_key, error=str(exc))
+        return pd.DataFrame(columns=["date", "value"])
+
+
+# ---------------------------------------------------------------------------
+# Bundled fixture loading
+# ---------------------------------------------------------------------------
+
+def _load_fixture_frame() -> pd.DataFrame | None:
+    """Read the bundled parquet once and cache. Return None if missing or unreadable.
+
+    Returns the full multi-series DataFrame with columns
+    [series_id, series_name, date, value, source]. Per-series filtering
+    happens in _load_series_from_fixture.
+    """
+    global _FIXTURE_FRAME
+
+    if _FIXTURE_FRAME is not None:
+        return _FIXTURE_FRAME
+
+    if not BUNDLED_FIXTURE_PATH.exists():
+        return None
+
+    try:
+        df = pd.read_parquet(BUNDLED_FIXTURE_PATH)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "realism_fixture_read_failed",
+            path=str(BUNDLED_FIXTURE_PATH),
+            error=str(exc),
+        )
+        return None
+
+    _FIXTURE_FRAME = df
+    return _FIXTURE_FRAME
+
+
+def _fixture_series_set() -> set[str]:
+    """Return the set of series_names present in the bundled fixture."""
+    df = _load_fixture_frame()
+    if df is None or df.empty or "series_name" not in df.columns:
+        return set()
+    return set(df["series_name"].unique())
+
+
+def _load_series_from_fixture(series_key: str) -> pd.DataFrame:
+    """Slice the bundled fixture for a series; return [date, value] like the DB path."""
+    df = _load_fixture_frame()
+    if df is None or df.empty:
+        return pd.DataFrame(columns=["date", "value"])
+
+    sub = df[df["series_name"] == series_key][["date", "value"]].copy()
+    if sub.empty:
+        return pd.DataFrame(columns=["date", "value"])
+
+    sub["date"] = pd.to_datetime(sub["date"]).dt.date
+    sub["value"] = sub["value"].astype(float)
+    sub = sub.sort_values("date").reset_index(drop=True)
+    return sub
+
+
+# ---------------------------------------------------------------------------
+# Source resolution (the three-tier precedence)
+# ---------------------------------------------------------------------------
+
+def _resolve_source() -> str:
+    """Resolve the data source once per run and log the resolution.
+
+    Returns one of:
+      - "database"         — DB reachable and supplies the full realism set
+      - "bundled_fixture"  — DB unavailable or incomplete; fixture is used
+      - "none"             — neither available; Stage 2 will be skipped
+    """
+    global _SOURCE
+
+    if _SOURCE is not None:
+        return _SOURCE
+
+    db_url_set = bool(os.environ.get("KNOT_SHORE_DB_URL", "").strip())
+    engine = _get_engine()
+
+    # If the DB connected, check that it supplies the full realism set.
+    if engine is not None:
+        try:
+            from sqlalchemy import text  # noqa: PLC0415
+
+            with engine.connect() as conn:
+                rows = conn.execute(
+                    text(
+                        "SELECT DISTINCT series_name "
+                        "FROM raw.fact_economic_observations"
+                    )
+                ).fetchall()
+            db_series = {r[0] for r in rows}
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("realism_db_series_probe_failed", error=str(exc))
+            db_series = set()
+
+        missing = sorted(REALISM_SERIES - db_series)
+        if not missing:
+            _SOURCE = "database"
+            logger.info(
+                "realism_source",
+                stage=2,
+                source="database",
+                series_count=len(REALISM_SERIES),
+            )
+            return _SOURCE
+
+        # DB connected but incomplete — fall back to fixture.
+        fixture_missing = sorted(REALISM_SERIES - _fixture_series_set())
+        if not fixture_missing and _load_fixture_frame() is not None:
+            _SOURCE = "bundled_fixture"
+            logger.warning(
+                "realism_source",
+                stage=2,
+                source="bundled_fixture",
+                reason="database_missing_series",
+                missing_series=missing,
+            )
+            return _SOURCE
+
+        _SOURCE = "none"
+        logger.warning(
+            "realism_source",
+            stage=2,
+            source="none",
+            reason="database_incomplete_and_fixture_missing",
+            missing_series=missing,
+        )
+        return _SOURCE
+
+    # DB not connected — try the fixture.
+    fixture_df = _load_fixture_frame()
+    if fixture_df is not None:
+        fixture_missing = sorted(REALISM_SERIES - _fixture_series_set())
+        if not fixture_missing:
+            reason = (
+                "database_unreachable" if db_url_set else "db_url_not_set"
+            )
+            log = logger.warning if db_url_set else logger.info
+            log(
+                "realism_source",
+                stage=2,
+                source="bundled_fixture",
+                reason=reason,
+            )
+            _SOURCE = "bundled_fixture"
+            return _SOURCE
+
+        _SOURCE = "none"
+        logger.warning(
+            "realism_source",
+            stage=2,
+            source="none",
+            reason="fixture_missing_series",
+            missing_series=fixture_missing,
+        )
+        return _SOURCE
+
+    # Neither DB nor fixture.
+    _SOURCE = "none"
+    logger.warning(
+        "realism_source",
+        stage=2,
+        source="none",
+        reason="no_db_and_no_fixture",
+    )
+    return _SOURCE
+
+
+# ---------------------------------------------------------------------------
+# Unified series accessors used by the multiplier functions
+# ---------------------------------------------------------------------------
+
+def _load_series(engine: Any, series_key: str) -> pd.DataFrame:
+    """Load a series from the resolved source as [date, value].
+
+    The ``engine`` argument is retained for back-compatibility with
+    existing tests that pass a mock engine; when the resolved source is
+    the database it is consulted, when the source is the fixture it is
+    ignored.
+    """
+    if series_key in _series_cache:
+        return _series_cache[series_key]
+
+    source = _SOURCE if _SOURCE is not None else _resolve_source()
+
+    if source == "database":
+        df = _load_series_from_db(engine, series_key)
+    elif source == "bundled_fixture":
+        df = _load_series_from_fixture(series_key)
+    else:
         df = pd.DataFrame(columns=["date", "value"])
 
     _series_cache[series_key] = df
@@ -174,7 +410,7 @@ def _lookup(engine: Any, series_key: str, target_date: date) -> float | None:
 
 
 # ---------------------------------------------------------------------------
-# Multiplier functions (§5.3)
+# Multiplier functions (§5.3) — formulas unchanged
 # ---------------------------------------------------------------------------
 
 def _sales_volume_multiplier(engine: Any, target_date: date) -> float:
@@ -200,11 +436,7 @@ def _sales_volume_multiplier(engine: Any, target_date: date) -> float:
 
 
 def _margin_adjustment(engine: Any, target_date: date, department_name: str) -> float:
-    """Return additive margin adjustment for a department on a date.
-
-    A negative return compresses margin; positive widens it.
-    Caller is responsible for clamping the final adjusted margin.
-    """
+    """Return additive margin adjustment for a department on a date."""
     series_key = ERS_DEPT_MAP.get(department_name, SERIES_ERS_ALL_FOOD)
     ers_value = _lookup(engine, series_key, target_date)
     ers_baseline = _get_baseline(engine, series_key)
@@ -232,10 +464,14 @@ def _labor_cost_multiplier(engine: Any, target_date: date) -> float:
 # ---------------------------------------------------------------------------
 
 def is_available(force_disable: bool = False) -> bool:
-    """Return True if the realism engine can connect to the database."""
+    """Return True if the realism engine has a usable data source.
+
+    A source is usable if either the database supplies the full realism
+    series set, or the bundled fixture is present and complete.
+    """
     if force_disable:
         return False
-    return _get_engine() is not None
+    return _resolve_source() in ("database", "bundled_fixture")
 
 
 def adjust(
@@ -247,7 +483,7 @@ def adjust(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Apply realism engine adjustments to dept and summary DataFrames.
 
-    Returns DataFrames unchanged if the database is unavailable or
+    Returns DataFrames unchanged if no data source is available or
     force_disable is True.
 
     Expects dept_df to contain helper columns produced by Stage 1:
@@ -256,9 +492,13 @@ def adjust(
     if force_disable:
         return dept_df, summary_df
 
-    engine = _get_engine()
-    if engine is None:
+    source = _resolve_source()
+    if source == "none":
         return dept_df, summary_df
+
+    # engine is consulted only when source == "database"; for the fixture
+    # path the unified _load_series ignores it.
+    engine = _get_engine() if source == "database" else None
 
     from knot_shore.sales_generator import apply_derivations  # noqa: PLC0415
 
@@ -331,9 +571,11 @@ def adjust(
 
 
 def clear_cache() -> None:
-    """Clear series and baseline caches and reset DB connection state."""
-    global _DB_ENGINE, _DB_AVAILABLE
+    """Clear series and baseline caches, fixture cache, and DB connection state."""
+    global _DB_ENGINE, _DB_AVAILABLE, _SOURCE, _FIXTURE_FRAME
     _series_cache.clear()
     _baseline_cache.clear()
     _DB_ENGINE = None
     _DB_AVAILABLE = None
+    _SOURCE = None
+    _FIXTURE_FRAME = None
