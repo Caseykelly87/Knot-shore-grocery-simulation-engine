@@ -28,8 +28,11 @@ Each generated date is seeded deterministically — the same seed and date produ
 # Install
 pip install -e .
 
-# For Stage 2 realism layer (requires Postgres driver)
+# For Stage 2 realism layer (Postgres driver + parquet reader for the bundled fixture)
 pip install -e ".[realism]"
+
+# For refreshing the bundled economic fixture from FRED / BLS / ERS
+pip install -e ".[fixtures]"
 
 # For development / testing
 pip install -e ".[dev]"
@@ -46,7 +49,7 @@ python -m knot_shore backfill --start-date 2025-07-01 --days 184 --output ./outp
 
 After `init`, output contains dimension tables (stores, departments, calendar) and a four-year promotion schedule. Subsequent `run` or `backfill` invocations populate the daily data tree.
 
-Python 3.11+ is required. Runtime dependencies: `faker>=19`, `numpy>=1.26`, `pandas>=2.1`, `structlog>=24`. The realism extras add `sqlalchemy>=2` and `psycopg2-binary>=2.9`.
+Python 3.11+ is required. Runtime dependencies: `faker>=19`, `numpy>=1.26`, `pandas>=2.1`, `structlog>=24`. The realism extras add `sqlalchemy>=2`, `psycopg2-binary>=2.9`, and `pyarrow>=14` (for reading the bundled economic fixture). The fixtures extra adds `requests>=2.31` and `pyarrow>=14` for the refresh script.
 
 ## Commands
 
@@ -117,7 +120,7 @@ promotions, and noise.          (skipped when DB unavailable     write CSVs and 
                                 or --no-realism is passed).      anomaly_log.csv.
 ```
 
-Stage 2 is optional. If `KNOT_SHORE_DB_URL` is unset or the connection fails, the engine logs a skip message and Stage 2 is bypassed. Base data is written to disk as-is.
+Stage 2 has a three-tier data-source precedence: database, then a bundled parquet fixture committed under [`seed_data/economic/`](seed_data/economic/), then skip. If the database is unavailable or cannot supply the realism-set series, the layer falls back to the bundled fixture so Stage 2 still runs. Stage 2 is only bypassed when neither source is present — a broken-install state.
 
 Stage 3 always runs. The `anomaly_log.csv` file is written for every date, even when no anomalies are injected (in which case the file contains only its header row).
 
@@ -192,9 +195,42 @@ The expected database is the one populated by the upstream `economic-data-etl` r
 - `ERS_*` per-category CPI → margin pressure per department
 - `AVG_WAGES` → labor cost multiplier
 
-If the connection fails or the variable is unset, the engine logs a skip and writes Stage 1 output as-is. The `--no-realism` flag forces Stage 2 to skip even when the database is reachable, useful for pure synthetic data without macro context.
+If the database is unset, unreachable, or reachable but missing series, Stage 2 falls back to the bundled parquet fixture for the whole run — see [Bundled economic fixture](#bundled-economic-fixture). The `--no-realism` flag forces Stage 2 to skip even when a source is available, useful for pure synthetic data without macro context.
 
-The cross-repo dependency is real: running Stage 2 against a freshly-cloned platform requires the upstream ETL's macro pipeline to have run at least once and populated the database. For most demo and development workflows, `--no-realism` is the appropriate path — Stage 1's output alone is the canonical demo data downstream consumers see.
+The realism layer emits one `realism_source` event per run announcing the resolved source (`database`, `bundled_fixture`, or `none`). When the layer expected a database (`KNOT_SHORE_DB_URL` was set) but used the fixture instead, the event is at warning level so the fallback is visible in pipeline output.
+
+### Bundled economic fixture
+
+[`seed_data/economic/economic_observations.parquet`](seed_data/economic/) is the offline-mode data source. The realism layer reads it when no database is configured or when the configured database cannot supply the realism-set series. The accompanying [`metadata.json`](seed_data/economic/metadata.json) carries the fixture's provenance:
+
+- **Last updated:** the `last_updated` field in `metadata.json` — the placeholder ships with `1970-01-01T00:00:00Z` and `is_placeholder: true`; the refresh script rewrites both fields with the current timestamp.
+
+The fixture committed initially is a synthetic placeholder (round-number values, monthly cadence from 2023-01 through 2024-06) so the realism layer's offline path has data to read and the test suite has something to exercise. The first refresh against the live APIs replaces it with real 2023-present data.
+
+Schema (mirrors the ETL pipeline's `raw.fact_economic_observations` table):
+
+| column        | type     |
+|---------------|----------|
+| `series_id`   | string   |
+| `series_name` | string   |
+| `date`        | date     |
+| `value`       | float64  |
+| `source`      | string   |
+
+The fixture covers all eleven series the realism layer queries: `SENTIMENT`, `UNRATE`, `AVG_WAGES`, `ERS_ALL_FOOD`, `ERS_FOOD_HOME`, `ERS_FOOD_AWAY`, `ERS_CEREALS`, `ERS_MEATS`, `ERS_DAIRY`, `ERS_FRUITS_VEG`, `ERS_BEVERAGES`.
+
+#### Refreshing the fixture
+
+[`scripts/refresh_economic_fixtures.py`](scripts/refresh_economic_fixtures.py) is a standalone maintenance script that fetches the series from FRED, BLS, and the USDA ERS Food Price Outlook and rewrites the bundled parquet. It is not part of the engine's normal CLI; expected cadence is three to four times a year, since the underlying monthly series do not change more frequently than that.
+
+```bash
+pip install -e ".[fixtures]"
+export FRED_API_KEY=...
+export BLS_API_KEY=...
+python scripts/refresh_economic_fixtures.py
+```
+
+ERS does not require an API key. A failed fetch for any series is a hard error: the script aborts without writing rather than producing a fixture missing series.
 
 ## Logging
 
