@@ -113,10 +113,15 @@ def realism_db(tmp_path):
 
 
 def test_load_series_returns_rows_from_raw_schema(realism_db):
-    """The corrected query must find seeded rows in raw.fact_economic_observations."""
-    df = realism._load_series(realism_db, "SENTIMENT")
+    """The corrected query must find seeded rows in raw.fact_economic_observations.
 
-    assert not df.empty, "_load_series returned empty — query did not find seeded rows"
+    Targets _load_series_from_db directly so this remains a focused SQL
+    regression guard regardless of how data resolution routes between the
+    database and the bundled fixture.
+    """
+    df = realism._load_series_from_db(realism_db, "SENTIMENT")
+
+    assert not df.empty, "_load_series_from_db returned empty — query did not find seeded rows"
     assert list(df.columns) == ["date", "value"], \
         f"Expected columns ['date', 'value'], got {list(df.columns)}"
     assert len(df) == 2, f"Expected 2 SENTIMENT rows, got {len(df)}"
