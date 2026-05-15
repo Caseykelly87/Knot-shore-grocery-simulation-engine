@@ -1,6 +1,6 @@
 {
-  "is_placeholder": true,
-  "last_updated": "1970-01-01T00:00:00Z",
+  "is_placeholder": false,
+  "last_updated": "2026-05-15T03:07:07Z",
   "series": [
     "AVG_WAGES",
     "ERS_ALL_FOOD",
@@ -14,10 +14,9 @@
     "SENTIMENT",
     "UNRATE"
   ],
-  "row_count": 198,
+  "row_count": 430,
   "date_range": {
     "start": "2023-01-01",
-    "end": "2024-06-01"
-  },
-  "note": "Synthetic placeholder. Run scripts/refresh_economic_fixtures.py with FRED_API_KEY and BLS_API_KEY to replace with real data."
+    "end": "2026-04-01"
+  }
 }
