@@ -12,22 +12,22 @@ dependencies = [
     "numpy>=1.26",
     "pandas>=2.1",
     "structlog>=24.0",
+    "pyarrow>=14.0",
 ]
 
 [project.optional-dependencies]
 realism = [
     "sqlalchemy>=2.0",
     "psycopg2-binary>=2.9",
-    "pyarrow>=14.0",
 ]
 fixtures = [
     "requests>=2.31",
-    "pyarrow>=14.0",
+    "python-dotenv",
+    "truststore>=0.10",
 ]
 dev = [
     "pytest>=7.4",
     "pytest-cov>=4.1",
-    "pyarrow>=14.0",
 ]
 
 [project.scripts]
