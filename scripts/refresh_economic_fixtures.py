@@ -49,15 +49,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
-import requests
-import truststore
-from dotenv import load_dotenv
 
-# Route TLS verification through the OS certificate store so the script
-# works under corporate cert-intercepting proxies that inject a root CA
-# into the system store but not into certifi's bundle. No-op on a
-# system whose trust roots match certifi's defaults.
-truststore.inject_into_ssl()
+# requests, truststore, and python-dotenv are imported lazily inside the
+# functions that use them so the module can be imported without the
+# [fixtures] extra installed. The drift-guard test in
+# tests/test_realism_fixture_fallback.py imports this script to compare
+# its series catalog against the realism layer's REALISM_SERIES; that
+# import path should not require the HTTP-client stack.
 
 # The sim engine's package lives under src/; make it importable when
 # this script is run from the repo root.
@@ -158,6 +156,8 @@ def fetch_with_retry(func):
     """
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
+        import requests  # noqa: PLC0415
+
         last_exc: BaseException | None = None
         for attempt in range(3):
             try:
@@ -188,6 +188,8 @@ def fetch_with_retry(func):
 @fetch_with_retry
 def fetch_fred_series(series_name: str, series_id: str, api_key: str) -> pd.DataFrame:
     """Fetch a FRED observation series. Returns long-format DataFrame."""
+    import requests  # noqa: PLC0415
+
     started = time.perf_counter()
     params = {
         "series_id": series_id,
@@ -237,6 +239,8 @@ def fetch_fred_series(series_name: str, series_id: str, api_key: str) -> pd.Data
 @fetch_with_retry
 def fetch_bls_batch(series_map: dict[str, str], api_key: str) -> pd.DataFrame:
     """Batched BLS POST for all configured BLS series. Returns long-format DataFrame."""
+    import requests  # noqa: PLC0415
+
     started = time.perf_counter()
     end_year = datetime.now(timezone.utc).year
     payload = {
@@ -338,6 +342,15 @@ def _configure_logging() -> None:
 
 def refresh() -> None:
     """Fetch every realism-set series and write the bundled fixture."""
+    import truststore  # noqa: PLC0415
+    from dotenv import load_dotenv  # noqa: PLC0415
+
+    # Route TLS verification through the OS certificate store so the
+    # script works under corporate cert-intercepting proxies that inject
+    # a root CA into the system store but not into certifi's bundle.
+    # No-op on a system whose trust roots match certifi's defaults.
+    truststore.inject_into_ssl()
+
     _configure_logging()
     load_dotenv(_REPO_ROOT / ".env")
     _assert_series_match_realism_layer()
