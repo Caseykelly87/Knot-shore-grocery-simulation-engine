@@ -1,0 +1,22 @@
+{
+  "is_placeholder": false,
+  "last_updated": "2026-05-15T03:07:07Z",
+  "series": [
+    "AVG_WAGES",
+    "ERS_ALL_FOOD",
+    "ERS_BEVERAGES",
+    "ERS_CEREALS",
+    "ERS_DAIRY",
+    "ERS_FOOD_AWAY",
+    "ERS_FOOD_HOME",
+    "ERS_FRUITS_VEG",
+    "ERS_MEATS",
+    "SENTIMENT",
+    "UNRATE"
+  ],
+  "row_count": 430,
+  "date_range": {
+    "start": "2023-01-01",
+    "end": "2026-04-01"
+  }
+}

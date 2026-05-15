@@ -377,7 +377,14 @@ SERIES_GAS_PRICE = "GAS_PRICE"
 SERIES_AVG_WAGES = "AVG_WAGES"
 SERIES_WAGE_INDEX = "WAGE_INDEX"
 
-# ERS series
+# Food-category CPI series.
+#
+# The data is sourced from BLS monthly CPI indexes (the underlying
+# publisher); the ERS_ prefix on these series names is historical, from
+# when an earlier iteration of the platform pulled the same categories
+# from the USDA ERS Food Price Outlook. The names are kept stable to
+# avoid cascading renames through the realism layer, the department
+# mapping below, and the test suite.
 SERIES_ERS_ALL_FOOD = "ERS_ALL_FOOD"
 SERIES_ERS_FOOD_HOME = "ERS_FOOD_HOME"
 SERIES_ERS_FOOD_AWAY = "ERS_FOOD_AWAY"
@@ -387,7 +394,9 @@ SERIES_ERS_DAIRY = "ERS_DAIRY"
 SERIES_ERS_FRUITS_VEG = "ERS_FRUITS_VEG"
 SERIES_ERS_BEVERAGES = "ERS_BEVERAGES"
 
-# Realism engine: ERS category → department mapping (§5.3)
+# Realism engine: food-category CPI series → department mapping (§5.3).
+# Variable name retained for back-compatibility; see comment above the
+# SERIES_ERS_* constants for the data-source history.
 ERS_DEPT_MAP: dict[str, str] = {
     "Produce":                SERIES_ERS_FRUITS_VEG,
     "Meat & Seafood":         SERIES_ERS_MEATS,

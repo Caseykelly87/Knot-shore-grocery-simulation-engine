@@ -76,7 +76,7 @@ def test_margin_adjustment_clamped_to_min():
     from knot_shore.realism import _margin_adjustment
 
     engine = MagicMock()
-    # ERS value 10× baseline → very large negative margin_adjustment
+    # food CPI value 10× baseline → very large negative margin_adjustment
     with patch("knot_shore.realism._lookup", return_value=1000.0), \
          patch("knot_shore.realism._get_baseline", return_value=100.0):
         adj = _margin_adjustment(engine, TEST_DATE, "Produce")
@@ -94,7 +94,7 @@ def test_margin_adjustment_clamped_to_max():
     from knot_shore.realism import _margin_adjustment
 
     engine = MagicMock()
-    # ERS value near 0 → large positive margin_adjustment
+    # food CPI value near 0 → large positive margin_adjustment
     with patch("knot_shore.realism._lookup", return_value=1.0), \
          patch("knot_shore.realism._get_baseline", return_value=100.0):
         adj = _margin_adjustment(engine, TEST_DATE, "Produce")

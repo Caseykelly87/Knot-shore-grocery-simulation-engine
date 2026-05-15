@@ -48,22 +48,22 @@ _SEED_ROWS = [
     ("UNRATE", "UNRATE", "2025-01-01", 3.5, "FRED"),
     ("CES0500000003", "AVG_WAGES", "2024-01-01", 30.0, "BLS"),
     ("CES0500000003", "AVG_WAGES", "2025-01-01", 33.0, "BLS"),
-    ("ERS_FOOD_HOME", "ERS_FOOD_HOME", "2024-01-01", 100.0, "ERS"),
-    ("ERS_FOOD_HOME", "ERS_FOOD_HOME", "2025-01-01", 110.0, "ERS"),
-    ("ERS_ALL_FOOD", "ERS_ALL_FOOD", "2024-01-01", 100.0, "ERS"),
-    ("ERS_ALL_FOOD", "ERS_ALL_FOOD", "2025-01-01", 108.0, "ERS"),
-    ("ERS_FRUITS_VEG", "ERS_FRUITS_VEG", "2024-01-01", 100.0, "ERS"),
-    ("ERS_FRUITS_VEG", "ERS_FRUITS_VEG", "2025-01-01", 112.0, "ERS"),
-    ("ERS_MEATS", "ERS_MEATS", "2024-01-01", 100.0, "ERS"),
-    ("ERS_MEATS", "ERS_MEATS", "2025-01-01", 109.0, "ERS"),
-    ("ERS_DAIRY", "ERS_DAIRY", "2024-01-01", 100.0, "ERS"),
-    ("ERS_DAIRY", "ERS_DAIRY", "2025-01-01", 107.0, "ERS"),
-    ("ERS_CEREALS", "ERS_CEREALS", "2024-01-01", 100.0, "ERS"),
-    ("ERS_CEREALS", "ERS_CEREALS", "2025-01-01", 106.0, "ERS"),
-    ("ERS_BEVERAGES", "ERS_BEVERAGES", "2024-01-01", 100.0, "ERS"),
-    ("ERS_BEVERAGES", "ERS_BEVERAGES", "2025-01-01", 105.0, "ERS"),
-    ("ERS_FOOD_AWAY", "ERS_FOOD_AWAY", "2024-01-01", 100.0, "ERS"),
-    ("ERS_FOOD_AWAY", "ERS_FOOD_AWAY", "2025-01-01", 104.0, "ERS"),
+    ("ERS_FOOD_HOME", "ERS_FOOD_HOME", "2024-01-01", 100.0, "BLS"),
+    ("ERS_FOOD_HOME", "ERS_FOOD_HOME", "2025-01-01", 110.0, "BLS"),
+    ("ERS_ALL_FOOD", "ERS_ALL_FOOD", "2024-01-01", 100.0, "BLS"),
+    ("ERS_ALL_FOOD", "ERS_ALL_FOOD", "2025-01-01", 108.0, "BLS"),
+    ("ERS_FRUITS_VEG", "ERS_FRUITS_VEG", "2024-01-01", 100.0, "BLS"),
+    ("ERS_FRUITS_VEG", "ERS_FRUITS_VEG", "2025-01-01", 112.0, "BLS"),
+    ("ERS_MEATS", "ERS_MEATS", "2024-01-01", 100.0, "BLS"),
+    ("ERS_MEATS", "ERS_MEATS", "2025-01-01", 109.0, "BLS"),
+    ("ERS_DAIRY", "ERS_DAIRY", "2024-01-01", 100.0, "BLS"),
+    ("ERS_DAIRY", "ERS_DAIRY", "2025-01-01", 107.0, "BLS"),
+    ("ERS_CEREALS", "ERS_CEREALS", "2024-01-01", 100.0, "BLS"),
+    ("ERS_CEREALS", "ERS_CEREALS", "2025-01-01", 106.0, "BLS"),
+    ("ERS_BEVERAGES", "ERS_BEVERAGES", "2024-01-01", 100.0, "BLS"),
+    ("ERS_BEVERAGES", "ERS_BEVERAGES", "2025-01-01", 105.0, "BLS"),
+    ("ERS_FOOD_AWAY", "ERS_FOOD_AWAY", "2024-01-01", 100.0, "BLS"),
+    ("ERS_FOOD_AWAY", "ERS_FOOD_AWAY", "2025-01-01", 104.0, "BLS"),
 ]
 
 
@@ -113,10 +113,15 @@ def realism_db(tmp_path):
 
 
 def test_load_series_returns_rows_from_raw_schema(realism_db):
-    """The corrected query must find seeded rows in raw.fact_economic_observations."""
-    df = realism._load_series(realism_db, "SENTIMENT")
+    """The corrected query must find seeded rows in raw.fact_economic_observations.
 
-    assert not df.empty, "_load_series returned empty — query did not find seeded rows"
+    Targets _load_series_from_db directly so this remains a focused SQL
+    regression guard regardless of how data resolution routes between the
+    database and the bundled fixture.
+    """
+    df = realism._load_series_from_db(realism_db, "SENTIMENT")
+
+    assert not df.empty, "_load_series_from_db returned empty — query did not find seeded rows"
     assert list(df.columns) == ["date", "value"], \
         f"Expected columns ['date', 'value'], got {list(df.columns)}"
     assert len(df) == 2, f"Expected 2 SENTIMENT rows, got {len(df)}"

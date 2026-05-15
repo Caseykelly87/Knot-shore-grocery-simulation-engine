@@ -1,60 +1,27 @@
 """
 test_realism_skip.py
 
-Verify that the engine runs correctly when no database is available (§5.1).
+Verify the realism layer's skip paths.
 
-  - realism.is_available() returns False when KNOT_SHORE_DB_URL is unset
-  - realism.adjust() returns DataFrames unchanged when DB is unavailable
-  - The full Stage 1 → anomaly → Stage 3 pipeline works without sqlalchemy installed
+The realism layer resolves its data source via a three-tier precedence:
+database → bundled fixture → skip. This file covers the two paths that
+end in "skipped (DataFrames returned unchanged)":
+
+  - force_disable=True (always skip, regardless of source availability)
+  - no database AND no bundled fixture (broken-install state)
+
+The fixture-fallback path (no DB but fixture present) is covered in
+test_realism_fixture_fallback.py.
 """
 
 from __future__ import annotations
 
-import os
 from datetime import date
 
 import pandas as pd
 import pytest
 
 TEST_DATE = date(2024, 9, 10)
-
-
-def test_realism_unavailable_when_no_env_var(monkeypatch):
-    """is_available() must be False when KNOT_SHORE_DB_URL is not set."""
-    monkeypatch.delenv("KNOT_SHORE_DB_URL", raising=False)
-
-    # Reset cached state
-    import knot_shore.realism as realism
-    realism.clear_cache()
-
-    assert not realism.is_available(), \
-        "Realism engine should be unavailable without KNOT_SHORE_DB_URL"
-
-
-def test_adjust_returns_unchanged_when_no_db(monkeypatch):
-    """realism.adjust() must return DataFrames unchanged when DB is unavailable."""
-    monkeypatch.delenv("KNOT_SHORE_DB_URL", raising=False)
-
-    import knot_shore.realism as realism
-    realism.clear_cache()
-
-    from knot_shore.config import DEPARTMENTS, GLOBAL_SEED, STORES
-    from knot_shore.promotions import generate_promotions
-    from knot_shore.sales_generator import generate_day
-
-    promos = generate_promotions(seed=GLOBAL_SEED)
-    dept_df, summary_df = generate_day(
-        target_date=TEST_DATE,
-        stores=STORES,
-        departments=DEPARTMENTS,
-        promos_df=promos,
-        global_seed=GLOBAL_SEED,
-    )
-
-    dept_out, summary_out = realism.adjust(dept_df, summary_df, TEST_DATE)
-
-    pd.testing.assert_frame_equal(dept_df, dept_out)
-    pd.testing.assert_frame_equal(summary_df, summary_out)
 
 
 def test_adjust_returns_unchanged_when_force_disabled():
@@ -82,8 +49,47 @@ def test_adjust_returns_unchanged_when_force_disabled():
     pd.testing.assert_frame_equal(summary_df, summary_out)
 
 
+def test_is_available_false_when_force_disabled():
+    """is_available(force_disable=True) is always False even if a source exists."""
+    import knot_shore.realism as realism
+    realism.clear_cache()
+    assert not realism.is_available(force_disable=True)
+
+
+def test_adjust_returns_unchanged_when_no_db_and_no_fixture(monkeypatch, tmp_path):
+    """No database AND no bundled fixture → Stage 2 is skipped, dfs unchanged.
+
+    Simulates a broken-install state by pointing the fixture path at a
+    location that doesn't exist.
+    """
+    monkeypatch.delenv("KNOT_SHORE_DB_URL", raising=False)
+
+    import knot_shore.realism as realism
+    monkeypatch.setattr(realism, "BUNDLED_FIXTURE_PATH", tmp_path / "missing.parquet")
+    realism.clear_cache()
+
+    from knot_shore.config import DEPARTMENTS, GLOBAL_SEED, STORES
+    from knot_shore.promotions import generate_promotions
+    from knot_shore.sales_generator import generate_day
+
+    promos = generate_promotions(seed=GLOBAL_SEED)
+    dept_df, summary_df = generate_day(
+        target_date=TEST_DATE,
+        stores=STORES,
+        departments=DEPARTMENTS,
+        promos_df=promos,
+        global_seed=GLOBAL_SEED,
+    )
+
+    assert not realism.is_available()
+    dept_out, summary_out = realism.adjust(dept_df, summary_df, TEST_DATE)
+
+    pd.testing.assert_frame_equal(dept_df, dept_out)
+    pd.testing.assert_frame_equal(summary_df, summary_out)
+
+
 def test_full_pipeline_runs_without_db(monkeypatch, tmp_path):
-    """Full init + run pipeline completes without error when no DB is configured."""
+    """Full init + run pipeline completes without error when --no-realism is passed."""
     monkeypatch.delenv("KNOT_SHORE_DB_URL", raising=False)
 
     import knot_shore.realism as realism
