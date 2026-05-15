@@ -1,4 +1,4 @@
-"""Refresh the bundled economic fixture from FRED, BLS, and ERS.
+"""Refresh the bundled economic fixture from FRED and BLS.
 
 Standalone maintenance script. Not imported by the engine's normal code
 paths and not part of the CLI. Run manually about three to four times a
@@ -7,19 +7,15 @@ offline mode.
 
 Usage
 -----
-    set FRED_API_KEY=...
-    set BLS_API_KEY=...
+    # API keys are read from .env at the repo root
     python scripts/refresh_economic_fixtures.py
-
-ERS has no API key (the script scrapes the public Food Price Outlook
-page to discover the current CSV URL, mirroring the ETL pipeline's
-`get_dynamic_ers_url`).
 
 Inputs
 ------
 - realism series list: imported from `knot_shore.config` so this script
   cannot drift from what the realism layer actually consults
-- FRED_API_KEY, BLS_API_KEY: environment variables
+- FRED_API_KEY, BLS_API_KEY: read from the repo-root `.env` (via
+  `python-dotenv`), or from the process environment if already set
 
 Outputs
 -------
@@ -31,8 +27,8 @@ API budget reference
 - FRED free tier: 120 requests/minute. This script makes one request
   per FRED series (2 series). 60x headroom.
 - BLS registered tier: 500 queries/day with up to 50 series per query.
-  This script makes one batched query for all BLS series (1 series).
-- ERS: one HTML scrape + one CSV download per run.
+  This script makes one batched query for all BLS series (9 series:
+  8 food-category CPI indexes + 1 average-wages series).
 
 Failure policy
 --------------
@@ -43,20 +39,25 @@ broken fixture by definition.
 
 from __future__ import annotations
 
-import csv
 import functools
 import json
 import logging
 import os
-import re
 import sys
 import time
 from datetime import datetime, timezone
-from io import StringIO
 from pathlib import Path
 
 import pandas as pd
 import requests
+import truststore
+from dotenv import load_dotenv
+
+# Route TLS verification through the OS certificate store so the script
+# works under corporate cert-intercepting proxies that inject a root CA
+# into the system store but not into certifi's bundle. No-op on a
+# system whose trust roots match certifi's defaults.
+truststore.inject_into_ssl()
 
 # The sim engine's package lives under src/; make it importable when
 # this script is run from the repo root.
@@ -81,8 +82,11 @@ logger = logging.getLogger("refresh_economic_fixtures")
 
 # ---------------------------------------------------------------------------
 # Series catalog. Maps the sim engine's realism-set series names to the
-# source-specific identifiers the upstream APIs use. The ETL repository's
-# `src/config.py` is the implementation reference.
+# source-specific identifiers the upstream APIs use. The realism layer's
+# SERIES_ERS_* constants are retained for historical reasons — the food
+# CPI data is now sourced from BLS (the underlying publisher), not the
+# USDA ERS Food Price Outlook (which only forecasts annual percent
+# changes, the wrong granularity for the multiplier math).
 # ---------------------------------------------------------------------------
 
 FRED_SERIES: dict[str, str] = {
@@ -90,31 +94,27 @@ FRED_SERIES: dict[str, str] = {
     SERIES_UNRATE:    "UNRATE",
 }
 
+# BLS series: average hourly earnings + 8 monthly food-category CPI
+# indexes (CUUR* = U.S. city average, not seasonally adjusted). The 8
+# CPI series IDs were verified against the live BLS API to confirm
+# monthly granularity and 2023-present coverage.
 BLS_SERIES: dict[str, str] = {
-    SERIES_AVG_WAGES: "CES0500000003",
+    SERIES_AVG_WAGES:       "CES0500000003",  # Avg hourly earnings, total private (SA)
+    SERIES_ERS_ALL_FOOD:    "CUUR0000SAF1",   # Food
+    SERIES_ERS_FOOD_HOME:   "CUUR0000SAF11",  # Food at home
+    SERIES_ERS_FOOD_AWAY:   "CUUR0000SEFV",   # Food away from home
+    SERIES_ERS_CEREALS:     "CUUR0000SAF111", # Cereals and bakery products
+    SERIES_ERS_MEATS:       "CUUR0000SAF112", # Meats, poultry, fish, and eggs
+    SERIES_ERS_DAIRY:       "CUUR0000SEFJ",   # Dairy and related products
+    SERIES_ERS_FRUITS_VEG:  "CUUR0000SAF113", # Fruits and vegetables
+    SERIES_ERS_BEVERAGES:   "CUUR0000SAF114", # Nonalcoholic beverages
 }
-
-# ERS categories: the raw CSV label maps to a realism-set series name.
-# Mirrors `ERS_CATEGORY_MAP` in the ETL repo.
-ERS_CATEGORY_MAP: dict[str, str] = {
-    "All food":                                       SERIES_ERS_ALL_FOOD,
-    "Food at home":                                   SERIES_ERS_FOOD_HOME,
-    "Food away from home":                            SERIES_ERS_FOOD_AWAY,
-    "Cereals and bakery products":                    SERIES_ERS_CEREALS,
-    "Meats, poultry, and fish":                       SERIES_ERS_MEATS,
-    "Dairy products":                                 SERIES_ERS_DAIRY,
-    "Fruits and vegetables":                          SERIES_ERS_FRUITS_VEG,
-    "Nonalcoholic beverages and beverage materials":  SERIES_ERS_BEVERAGES,
-}
-
-ERS_SERIES: set[str] = set(ERS_CATEGORY_MAP.values())
 
 # The complete set the refresh must produce; cross-checked against the
 # realism layer's REALISM_SERIES constant at startup so the two cannot
 # drift apart.
-EXPECTED_SERIES: set[str] = (
-    set(FRED_SERIES.keys()) | set(BLS_SERIES.keys()) | ERS_SERIES
-)
+EXPECTED_SERIES: set[str] = set(FRED_SERIES.keys()) | set(BLS_SERIES.keys())
+
 
 # Realism-set guard (imported lazily to keep import-time work minimal).
 def _assert_series_match_realism_layer() -> None:
@@ -143,16 +143,6 @@ METADATA_PATH = FIXTURE_DIR / "metadata.json"
 
 _FRED_BASE = "https://api.stlouisfed.org/fred/series/observations"
 _BLS_BASE = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
-_ERS_SUMMARY_URL = "https://www.ers.usda.gov/data-products/food-price-outlook/summary-findings/"
-
-_ERS_BROWSER_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
-    ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-}
 
 # Polite spacing between FRED requests. Well under the 120/min limit but
 # documents intent for the next maintainer.
@@ -197,7 +187,7 @@ def fetch_with_retry(func):
 
 @fetch_with_retry
 def fetch_fred_series(series_name: str, series_id: str, api_key: str) -> pd.DataFrame:
-    """Fetch a FRED observation series. Returns [date, value]."""
+    """Fetch a FRED observation series. Returns long-format DataFrame."""
     started = time.perf_counter()
     params = {
         "series_id": series_id,
@@ -307,118 +297,6 @@ def fetch_bls_batch(series_map: dict[str, str], api_key: str) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# ERS fetch
-# ---------------------------------------------------------------------------
-
-_ERS_FALLBACK_URL = (
-    "https://www.ers.usda.gov/media/6460/"
-    "changes-in-consumer-price-indexes-2023-through-2026.csv"
-)
-
-
-def discover_ers_csv_url() -> str:
-    """Scrape the ERS summary page to find the current CPI Forecasts CSV link.
-
-    ERS rotates the media ID on every monthly update; mirrors the ETL
-    pipeline's get_dynamic_ers_url.
-    """
-    try:
-        response = requests.get(
-            _ERS_SUMMARY_URL,
-            headers=_ERS_BROWSER_HEADERS,
-            timeout=_HTTP_TIMEOUT_SECONDS,
-        )
-        if response.status_code == 200:
-            match = re.search(
-                r'href="([^"]*(?:consumer.price.index|CPIforecast|cpi_forecast|changes-in-consumer)[^"]*\.csv[^"]*)"',
-                response.text,
-                re.IGNORECASE,
-            )
-            if match:
-                raw = match.group(1)
-                url = raw if raw.startswith("http") else "https://www.ers.usda.gov" + raw
-                logger.info("ers_url_discovered", extra={"url": url})
-                return url
-    except requests.exceptions.RequestException as exc:
-        logger.warning(
-            "ers_url_discovery_failed",
-            extra={"error": str(exc), "error_type": type(exc).__name__},
-        )
-
-    logger.warning("ers_using_fallback_url", extra={"url": _ERS_FALLBACK_URL})
-    return _ERS_FALLBACK_URL
-
-
-@fetch_with_retry
-def fetch_ers_cpi_forecasts() -> pd.DataFrame:
-    """Fetch the ERS Food Price Outlook CSV and parse into long-format DataFrame."""
-    started = time.perf_counter()
-    csv_url = discover_ers_csv_url()
-    response = requests.get(
-        csv_url, headers=_ERS_BROWSER_HEADERS, timeout=_HTTP_TIMEOUT_SECONDS
-    )
-    if response.status_code == 404:
-        raise RuntimeError(
-            "ERS CSV URL returned 404. The fallback URL in this script may need updating. "
-            "Get the current URL from: https://www.ers.usda.gov/data-products/food-price-outlook/"
-        )
-    response.raise_for_status()
-
-    reader = csv.DictReader(StringIO(response.text))
-    rows_in = [dict(row) for row in reader]
-    if not rows_in:
-        raise RuntimeError("ERS CSV returned no rows")
-
-    df_in = pd.DataFrame(rows_in)
-    if "Year" not in df_in.columns or "Category" not in df_in.columns:
-        raise RuntimeError(
-            f"ERS CSV missing required columns; got {sorted(df_in.columns)}"
-        )
-
-    df_in["Year"] = pd.to_numeric(df_in["Year"], errors="coerce")
-    df_in = df_in[df_in["Year"] >= 2023].copy()
-
-    value_col: str | None = None
-    for candidate in ("Forecast_Midpoint", "Annual", "Midpoint"):
-        if candidate in df_in.columns:
-            value_col = candidate
-            break
-    if value_col is None:
-        # Pick the first column with numeric content that isn't Year/Category.
-        for c in df_in.columns:
-            if c in ("Year", "Category"):
-                continue
-            if pd.to_numeric(df_in[c], errors="coerce").notna().any():
-                value_col = c
-                break
-    if value_col is None:
-        raise RuntimeError("ERS CSV has no usable numeric value column")
-
-    df_in["series_name"] = df_in["Category"].map(ERS_CATEGORY_MAP)
-    df_in = df_in.dropna(subset=["series_name"])
-    df_in["series_id"] = df_in["series_name"]
-    df_in["date"] = pd.to_datetime(df_in["Year"].astype(int).astype(str) + "-01-01")
-    df_in["value"] = pd.to_numeric(df_in[value_col], errors="coerce")
-    df_in["source"] = "ERS"
-    df_in = df_in.dropna(subset=["value"])
-
-    out = df_in[["series_id", "series_name", "date", "value", "source"]].copy()
-
-    elapsed_ms = round((time.perf_counter() - started) * 1000)
-    logger.info(
-        "ers_fetched",
-        extra={
-            "url": csv_url,
-            "status": response.status_code,
-            "row_count": len(out),
-            "elapsed_ms": elapsed_ms,
-            "value_column": value_col,
-        },
-    )
-    return out
-
-
-# ---------------------------------------------------------------------------
 # Driver
 # ---------------------------------------------------------------------------
 
@@ -461,6 +339,7 @@ def _configure_logging() -> None:
 def refresh() -> None:
     """Fetch every realism-set series and write the bundled fixture."""
     _configure_logging()
+    load_dotenv(_REPO_ROOT / ".env")
     _assert_series_match_realism_layer()
 
     fred_key = os.environ.get("FRED_API_KEY", "").strip()
@@ -477,11 +356,8 @@ def refresh() -> None:
         frames.append(fetch_fred_series(series_name, series_id, fred_key))
         time.sleep(_FRED_REQUEST_SPACING_SECONDS)
 
-    # BLS — single batched POST.
+    # BLS — single batched POST for all 9 BLS series.
     frames.append(fetch_bls_batch(BLS_SERIES, bls_key))
-
-    # ERS — scrape + CSV.
-    frames.append(fetch_ers_cpi_forecasts())
 
     combined = pd.concat(frames, ignore_index=True)
     combined = combined.dropna(subset=["value"]).sort_values(

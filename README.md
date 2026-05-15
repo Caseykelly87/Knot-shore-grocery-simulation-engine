@@ -28,10 +28,10 @@ Each generated date is seeded deterministically — the same seed and date produ
 # Install
 pip install -e .
 
-# For Stage 2 realism layer (Postgres driver + parquet reader for the bundled fixture)
+# For Stage 2 realism layer (Postgres driver)
 pip install -e ".[realism]"
 
-# For refreshing the bundled economic fixture from FRED / BLS / ERS
+# For refreshing the bundled economic fixture from FRED and BLS
 pip install -e ".[fixtures]"
 
 # For development / testing
@@ -49,7 +49,7 @@ python -m knot_shore backfill --start-date 2025-07-01 --days 184 --output ./outp
 
 After `init`, output contains dimension tables (stores, departments, calendar) and a four-year promotion schedule. Subsequent `run` or `backfill` invocations populate the daily data tree.
 
-Python 3.11+ is required. Runtime dependencies: `faker>=19`, `numpy>=1.26`, `pandas>=2.1`, `structlog>=24`. The realism extras add `sqlalchemy>=2`, `psycopg2-binary>=2.9`, and `pyarrow>=14` (for reading the bundled economic fixture). The fixtures extra adds `requests>=2.31` and `pyarrow>=14` for the refresh script.
+Python 3.11+ is required. Runtime dependencies: `faker>=19`, `numpy>=1.26`, `pandas>=2.1`, `structlog>=24`, `pyarrow>=14` (the latter so the realism layer can read the bundled economic fixture out of the box). The realism extras add `sqlalchemy>=2` and `psycopg2-binary>=2.9` for the database path. The fixtures extra adds `requests>=2.31`, `python-dotenv`, and `truststore>=0.10` for the refresh script.
 
 ## Commands
 
@@ -189,11 +189,13 @@ When the environment variable `KNOT_SHORE_DB_URL` is set, Stage 2 connects to a 
 export KNOT_SHORE_DB_URL=postgresql://user:pass@host:5432/dbname
 ```
 
-The expected database is the one populated by the upstream `economic-data-etl` repository's macro pipeline (FRED, BLS, ERS series). Stage 2 reads economic indicators that the macro pipeline has loaded — Consumer Price Index (food at home), University of Michigan Consumer Sentiment, unemployment rate, average wages, and per-category CPI series — and applies them as multipliers to the base data:
+The expected database is the one populated by the upstream `economic-data-etl` repository's macro pipeline (FRED and BLS series). Stage 2 reads economic indicators that the macro pipeline has loaded — Consumer Price Index (food at home), University of Michigan Consumer Sentiment, unemployment rate, average wages, and per-category food CPI series — and applies them as multipliers to the base data:
 
 - `ERS_FOOD_HOME`, `SENTIMENT`, `UNRATE` → sales volume multiplier
-- `ERS_*` per-category CPI → margin pressure per department
+- `ERS_*` per-category food CPI → margin pressure per department
 - `AVG_WAGES` → labor cost multiplier
+
+The `ERS_*` prefix on the food-category series names is historical, from when an earlier iteration of the platform pulled those categories from the USDA ERS Food Price Outlook. The data is now sourced from the underlying BLS monthly CPI indexes; the names are kept stable to avoid cascading renames through the realism layer and the test suite.
 
 If the database is unset, unreachable, or reachable but missing series, Stage 2 falls back to the bundled parquet fixture for the whole run — see [Bundled economic fixture](#bundled-economic-fixture). The `--no-realism` flag forces Stage 2 to skip even when a source is available, useful for pure synthetic data without macro context.
 
@@ -221,16 +223,15 @@ The fixture covers all eleven series the realism layer queries: `SENTIMENT`, `UN
 
 #### Refreshing the fixture
 
-[`scripts/refresh_economic_fixtures.py`](scripts/refresh_economic_fixtures.py) is a standalone maintenance script that fetches the series from FRED, BLS, and the USDA ERS Food Price Outlook and rewrites the bundled parquet. It is not part of the engine's normal CLI; expected cadence is three to four times a year, since the underlying monthly series do not change more frequently than that.
+[`scripts/refresh_economic_fixtures.py`](scripts/refresh_economic_fixtures.py) is a standalone maintenance script that fetches the realism-set series from FRED and BLS and rewrites the bundled parquet. It is not part of the engine's normal CLI; expected cadence is three to four times a year, since the underlying monthly series do not change more frequently than that.
 
 ```bash
 pip install -e ".[fixtures]"
-export FRED_API_KEY=...
-export BLS_API_KEY=...
+# Put FRED_API_KEY and BLS_API_KEY in the repo-root .env (see .env.example)
 python scripts/refresh_economic_fixtures.py
 ```
 
-ERS does not require an API key. A failed fetch for any series is a hard error: the script aborts without writing rather than producing a fixture missing series.
+The script reads `FRED_API_KEY` and `BLS_API_KEY` from the repo-root `.env` via `python-dotenv` (or from the process environment if already set). A failed fetch for any series is a hard error: the script aborts without writing rather than producing a fixture missing series.
 
 ## Logging
 

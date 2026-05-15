@@ -21,7 +21,7 @@ replaced with real 2023-present data by running
 | `series_name` | string   | realism-layer key (e.g. `SENTIMENT`)               |
 | `date`        | date     | observation date (first of month for monthlies)    |
 | `value`       | float64  | observation value                                  |
-| `source`      | string   | `FRED`, `BLS`, or `ERS`                            |
+| `source`      | string   | `FRED` or `BLS`                                    |
 
 Schema mirrors the ETL pipeline's `raw.fact_economic_observations`
 table so the realism layer's fixture-reading path produces a DataFrame
