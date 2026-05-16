@@ -20,6 +20,18 @@ from knot_shore.sales_generator import generate_day
 _DATE = date(2024, 8, 1)
 
 
+@pytest.fixture(autouse=True)
+def _reset_realism_cache():
+    # The realism layer caches resolved-source state in module globals.
+    # Other test files (notably the fixture-fallback suite) can leave that
+    # cache set to "none", which makes adjust() early-return and short-
+    # circuit the seeding path these tests are meant to exercise. The
+    # bundled-fixture path is the intended source when no DB is configured.
+    realism.clear_cache()
+    yield
+    realism.clear_cache()
+
+
 @pytest.fixture(scope="module")
 def _base_frames():
     promos = generate_promotions(seed=42)
