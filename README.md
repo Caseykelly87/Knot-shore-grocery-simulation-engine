@@ -1,5 +1,7 @@
 # Knot Shore Grocery — Simulation Engine
 
+[![CI](https://github.com/Caseykelly87/Knot-shore-grocery-simulation-engine/actions/workflows/test.yml/badge.svg)](https://github.com/Caseykelly87/Knot-shore-grocery-simulation-engine/actions/workflows/test.yml)
+
 Synthetic data generator for Knot Shore Grocery, a fictional 8-store grocery chain in the St. Louis metropolitan area. Produces deterministic store and department-level retail data with injected anomalies and ground-truth labels. The output is the upstream source for a four-repo analytics platform — an ETL pipeline ingests it, an API serves the result as JSON, and a Next.js portal renders stakeholder dashboards.
 
 ## Table of contents
