@@ -12,10 +12,9 @@ Verify that the derivation chain invariants hold for every row produced by Stage
 
 from __future__ import annotations
 
-import pytest
-import pandas as pd
 import numpy as np
-
+import pandas as pd
+import pytest
 
 TOLERANCE = 0.02  # $0.02 rounding tolerance
 
@@ -70,7 +69,8 @@ def test_no_discount_when_promo_flag_false(dept_df):
     no_promo = dept_df[~dept_df["promo_flag"]]
     bad = no_promo[no_promo["discount_amount"] != 0.0]
     assert bad.empty, (
-        f"promo_flag=False rows have non-zero discount_amount: {bad[['store_id','department_id','discount_amount']].head()}"
+        "promo_flag=False rows have non-zero discount_amount: "
+        f"{bad[['store_id','department_id','discount_amount']].head()}"
     )
 
 

@@ -39,7 +39,6 @@ from sqlalchemy import create_engine, event, text  # noqa: E402
 
 import knot_shore.realism as realism  # noqa: E402
 
-
 _SEED_ROWS = [
     # (series_id, series_name, date, value, source)
     ("UMCSENT", "SENTIMENT", "2024-01-01", 70.0, "FRED"),

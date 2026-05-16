@@ -1,7 +1,8 @@
 """Tests for the backfill date-range resolver."""
 
-import pytest
 from datetime import date
+
+import pytest
 
 from knot_shore.cli import resolve_backfill_dates
 

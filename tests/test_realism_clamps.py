@@ -24,7 +24,6 @@ from knot_shore.config import (
     REALISM_SALES_CLAMP,
 )
 
-
 TEST_DATE = date(2024, 6, 1)
 
 
@@ -62,8 +61,13 @@ def test_sales_multiplier_lower_clamp():
     values = {"ERS_FOOD_HOME": 200.0, "SENTIMENT": 20.0, "UNRATE": 200.0}
     baselines = {"ERS_FOOD_HOME": 100.0, "SENTIMENT": 100.0, "UNRATE": 100.0}
 
-    with patch("knot_shore.realism._lookup", side_effect=lambda e, k, d: values.get(k, 100.0)), \
-         patch("knot_shore.realism._get_baseline", side_effect=lambda e, k: baselines.get(k, 100.0)):
+    with patch(
+        "knot_shore.realism._lookup",
+        side_effect=lambda e, k, d: values.get(k, 100.0),
+    ), patch(
+        "knot_shore.realism._get_baseline",
+        side_effect=lambda e, k: baselines.get(k, 100.0),
+    ):
         result = _sales_volume_multiplier(engine, TEST_DATE)
 
     assert result >= REALISM_SALES_CLAMP[0] - 1e-9, \
@@ -81,7 +85,9 @@ def test_margin_adjustment_clamped_to_min():
          patch("knot_shore.realism._get_baseline", return_value=100.0):
         adj = _margin_adjustment(engine, TEST_DATE, "Produce")
 
-    base_margin = next(d["base_margin_pct"] for d in DEPARTMENTS if d["department_name"] == "Produce")
+    base_margin = next(
+        d["base_margin_pct"] for d in DEPARTMENTS if d["department_name"] == "Produce"
+    )
     adjusted = base_margin + adj
     clamped = np.clip(adjusted, REALISM_MARGIN_MIN, REALISM_MARGIN_MAX)
 
@@ -100,7 +106,9 @@ def test_margin_adjustment_clamped_to_max():
         adj = _margin_adjustment(engine, TEST_DATE, "Produce")
 
     from knot_shore.config import DEPARTMENTS
-    base_margin = next(d["base_margin_pct"] for d in DEPARTMENTS if d["department_name"] == "Produce")
+    base_margin = next(
+        d["base_margin_pct"] for d in DEPARTMENTS if d["department_name"] == "Produce"
+    )
     adjusted = base_margin + adj
     clamped = np.clip(adjusted, REALISM_MARGIN_MIN, REALISM_MARGIN_MAX)
 
@@ -136,7 +144,11 @@ def test_labor_multiplier_lower_clamp():
 
 def test_missing_series_returns_neutral():
     """When a series has no data, multiplier defaults to neutral (1.0 / 0.0)."""
-    from knot_shore.realism import _sales_volume_multiplier, _margin_adjustment, _labor_cost_multiplier
+    from knot_shore.realism import (
+        _labor_cost_multiplier,
+        _margin_adjustment,
+        _sales_volume_multiplier,
+    )
 
     engine = MagicMock()
     with patch("knot_shore.realism._lookup", return_value=None), \

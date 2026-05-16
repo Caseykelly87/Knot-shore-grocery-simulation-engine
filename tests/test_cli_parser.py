@@ -1,7 +1,8 @@
 """Tests for the CLI argument parser surface."""
 
-import pytest
 from datetime import date
+
+import pytest
 
 from knot_shore.cli import _build_parser
 

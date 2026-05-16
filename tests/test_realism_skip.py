@@ -27,7 +27,6 @@ TEST_DATE = date(2024, 9, 10)
 def test_adjust_returns_unchanged_when_force_disabled():
     """force_disable=True must always skip Stage 2."""
     import knot_shore.realism as realism
-
     from knot_shore.config import DEPARTMENTS, GLOBAL_SEED, STORES
     from knot_shore.promotions import generate_promotions
     from knot_shore.sales_generator import generate_day
