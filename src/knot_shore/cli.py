@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -139,10 +140,29 @@ def _run_pipeline(
     generated: list[date] = []
     anomaly_summaries: list[dict] = []
 
-    for target_date in target_dates:
+    # Long pipelines (notably `backfill`, which processes ~184 dates) emit
+    # periodic progress at every PROGRESS_INTERVAL completed dates. Short
+    # pipelines (`run`, 8 dates) stay below the threshold and emit nothing
+    # — the existing started/complete events bookend them adequately.
+    PROGRESS_INTERVAL = 25
+    pipeline_start = time.monotonic()
+    total = len(target_dates)
+
+    def _maybe_emit_progress(i: int) -> None:
+        completed = i + 1
+        if total > PROGRESS_INTERVAL and completed % PROGRESS_INTERVAL == 0:
+            logger.info(
+                "backfill_progress",
+                dates_completed=completed,
+                dates_total=total,
+                elapsed_ms=int((time.monotonic() - pipeline_start) * 1000),
+            )
+
+    for i, target_date in enumerate(target_dates):
         date_dir = daily_dir_for(output_dir, target_date)
         if date_dir.exists():
             logger.debug("Folder exists for %s — skipping.", target_date.isoformat())
+            _maybe_emit_progress(i)
             continue
 
         # Stage 1
@@ -196,6 +216,8 @@ def _run_pipeline(
                 anomaly_log_df=anomaly_log_df,
             )
             logger.info("Store reports written for %s.", target_date.isoformat())
+
+        _maybe_emit_progress(i)
 
     return generated, anomaly_summaries
 
