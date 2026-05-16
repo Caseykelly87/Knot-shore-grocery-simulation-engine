@@ -159,7 +159,7 @@ def write_daily(
         anomaly_out = anomaly_log_df.reindex(columns=anomaly_cols)
         anomaly_out.to_csv(daily_dir / "anomaly_log.csv", index=False, encoding="utf-8")
 
-    logger.info(
+    logger.debug(
         "wrote_daily_output",
         date=date_str,
         dept_rows=len(dept_out),
@@ -183,9 +183,22 @@ def update_manifest(
 ) -> None:
     """Read, update, and write manifest.json.
 
-    Accumulates dates_generated and cumulative row counts across runs.
-    The command field records what operation last touched the manifest
-    (e.g. 'init', 'run', 'reports').
+    Field semantics:
+      ``dates_generated``         — cumulative union of every date the
+                                    engine has produced output for, across
+                                    all invocations. Source of truth for
+                                    "what data is on disk".
+      ``last_invocation_dates``   — the date list passed to this single
+                                    invocation. Scoped to the most recent
+                                    `run` or `backfill` call only; not a
+                                    rolling history.
+      ``last_command``            — which command produced
+                                    `last_invocation_dates`
+                                    ('init', 'run', 'reports', 'backfill').
+
+    The distinction matters: after a 184-day backfill that ran on top of
+    earlier `run` output, `dates_generated` contains everything, but
+    `last_invocation_dates` only reflects the 184 backfilled dates.
     """
     manifest_path = output_dir / "manifest.json"
 
@@ -208,7 +221,7 @@ def update_manifest(
             existing_dates.add(ds)
 
     manifest["last_run"] = datetime.now(timezone.utc).isoformat()
-    manifest["last_run_dates"] = new_date_strs
+    manifest["last_invocation_dates"] = new_date_strs
     manifest["last_command"] = command
     manifest["realism_engine"] = realism_active
     manifest["generator_version"] = GENERATOR_VERSION
@@ -271,7 +284,7 @@ def update_manifest(
 def _empty_manifest(global_seed: int) -> dict:
     return {
         "last_run": "",
-        "last_run_dates": [],
+        "last_invocation_dates": [],
         "last_command": "",
         "realism_engine": False,
         "generator_version": GENERATOR_VERSION,
