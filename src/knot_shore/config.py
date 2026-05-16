@@ -165,17 +165,20 @@ SEASONAL_WINTER_PEAK = "winter-peak"
 SEASONAL_HOLIDAY_SPIKE = "holiday-spike"
 SEASONAL_STABLE = "stable"
 
+# Rows are deliberately column-aligned for visual scanning — the long-line
+# warnings (E501) are silenced per row because reformatting to multi-line
+# dicts would lose the at-a-glance table view.
 DEPARTMENTS: list[dict] = [
-    {"department_id": 1,  "department_name": "Produce",                "is_perishable": True,  "seasonal_profile": SEASONAL_SUMMER_PEAK,   "base_margin_pct": 0.48},
-    {"department_id": 2,  "department_name": "Meat & Seafood",         "is_perishable": True,  "seasonal_profile": SEASONAL_HOLIDAY_SPIKE, "base_margin_pct": 0.34},
-    {"department_id": 3,  "department_name": "Dairy & Eggs",           "is_perishable": True,  "seasonal_profile": SEASONAL_STABLE,        "base_margin_pct": 0.32},
-    {"department_id": 4,  "department_name": "Bakery",                 "is_perishable": True,  "seasonal_profile": SEASONAL_HOLIDAY_SPIKE, "base_margin_pct": 0.55},
-    {"department_id": 5,  "department_name": "Deli & Prepared",        "is_perishable": True,  "seasonal_profile": SEASONAL_STABLE,        "base_margin_pct": 0.42},
-    {"department_id": 6,  "department_name": "Frozen",                 "is_perishable": False, "seasonal_profile": SEASONAL_WINTER_PEAK,   "base_margin_pct": 0.38},
-    {"department_id": 7,  "department_name": "Grocery (Center Store)", "is_perishable": False, "seasonal_profile": SEASONAL_HOLIDAY_SPIKE, "base_margin_pct": 0.27},
-    {"department_id": 8,  "department_name": "Beverages",              "is_perishable": False, "seasonal_profile": SEASONAL_SUMMER_PEAK,   "base_margin_pct": 0.35},
-    {"department_id": 9,  "department_name": "Snacks & Candy",         "is_perishable": False, "seasonal_profile": SEASONAL_SUMMER_PEAK,   "base_margin_pct": 0.40},
-    {"department_id": 10, "department_name": "Health/Beauty/Household","is_perishable": False, "seasonal_profile": SEASONAL_STABLE,        "base_margin_pct": 0.42},
+    {"department_id": 1,  "department_name": "Produce",                "is_perishable": True,  "seasonal_profile": SEASONAL_SUMMER_PEAK,   "base_margin_pct": 0.48},  # noqa: E501
+    {"department_id": 2,  "department_name": "Meat & Seafood",         "is_perishable": True,  "seasonal_profile": SEASONAL_HOLIDAY_SPIKE, "base_margin_pct": 0.34},  # noqa: E501
+    {"department_id": 3,  "department_name": "Dairy & Eggs",           "is_perishable": True,  "seasonal_profile": SEASONAL_STABLE,        "base_margin_pct": 0.32},  # noqa: E501
+    {"department_id": 4,  "department_name": "Bakery",                 "is_perishable": True,  "seasonal_profile": SEASONAL_HOLIDAY_SPIKE, "base_margin_pct": 0.55},  # noqa: E501
+    {"department_id": 5,  "department_name": "Deli & Prepared",        "is_perishable": True,  "seasonal_profile": SEASONAL_STABLE,        "base_margin_pct": 0.42},  # noqa: E501
+    {"department_id": 6,  "department_name": "Frozen",                 "is_perishable": False, "seasonal_profile": SEASONAL_WINTER_PEAK,   "base_margin_pct": 0.38},  # noqa: E501
+    {"department_id": 7,  "department_name": "Grocery (Center Store)", "is_perishable": False, "seasonal_profile": SEASONAL_HOLIDAY_SPIKE, "base_margin_pct": 0.27},  # noqa: E501
+    {"department_id": 8,  "department_name": "Beverages",              "is_perishable": False, "seasonal_profile": SEASONAL_SUMMER_PEAK,   "base_margin_pct": 0.35},  # noqa: E501
+    {"department_id": 9,  "department_name": "Snacks & Candy",         "is_perishable": False, "seasonal_profile": SEASONAL_SUMMER_PEAK,   "base_margin_pct": 0.40},  # noqa: E501
+    {"department_id": 10, "department_name": "Health/Beauty/Household","is_perishable": False, "seasonal_profile": SEASONAL_STABLE,        "base_margin_pct": 0.42},  # noqa: E501
 ]
 
 # ---------------------------------------------------------------------------

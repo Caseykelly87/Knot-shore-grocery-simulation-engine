@@ -17,9 +17,7 @@ import pandas as pd
 import pytest
 
 from knot_shore.anomalies import (
-    TYPE_DUPLICATE,
     TYPE_INTEGRITY,
-    TYPE_MARGIN,
     TYPE_MISSING,
     _inject_duplicate_row,
     _inject_integrity_breach,
@@ -118,8 +116,6 @@ def test_missing_department_removes_row(base_dept_df, base_summary_df):
 
 def test_margin_outlier_produces_unusual_margin(base_dept_df, base_summary_df):
     """_inject_margin_outlier produces gross_margin_pct outside normal range."""
-    rng = np.random.default_rng(0)
-    # Patch rng.random to take the negative-margin path
     rng_fixed = np.random.default_rng(0)
 
     mod_dept, description = _inject_margin_outlier(

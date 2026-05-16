@@ -12,11 +12,10 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
+import knot_shore.realism as realism
 from knot_shore.config import DEPARTMENTS, STORES
 from knot_shore.promotions import generate_promotions
 from knot_shore.sales_generator import generate_day
-import knot_shore.realism as realism
-
 
 _DATE = date(2024, 8, 1)
 

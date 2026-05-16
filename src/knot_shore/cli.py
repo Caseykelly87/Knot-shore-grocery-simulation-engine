@@ -5,7 +5,9 @@ Usage
 -----
   python -m knot_shore init     --seed 42 --output ./output
   python -m knot_shore run      --seed 42 --output ./output [--date YYYY-MM-DD] [--no-realism]
-  python -m knot_shore backfill --seed 42 --output ./output [--start-date YYYY-MM-DD | --end-date YYYY-MM-DD] [--days N] [--no-realism]
+  python -m knot_shore backfill --seed 42 --output ./output
+                                [--start-date YYYY-MM-DD | --end-date YYYY-MM-DD]
+                                [--days N] [--no-realism]
   python -m knot_shore reports  --date YYYY-MM-DD --output ./output
 
 Commands

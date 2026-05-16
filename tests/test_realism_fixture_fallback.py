@@ -66,7 +66,7 @@ def test_resolves_to_none_when_fixture_missing(monkeypatch, tmp_path):
 
 def test_resolves_to_fixture_when_db_supplies_partial_series(monkeypatch, tmp_path):
     """DB reachable but missing series → fall back to fixture for the whole run."""
-    sqlalchemy = pytest.importorskip("sqlalchemy")
+    pytest.importorskip("sqlalchemy")
     from sqlalchemy import create_engine, event, text
 
     main_path = tmp_path / "main.db"

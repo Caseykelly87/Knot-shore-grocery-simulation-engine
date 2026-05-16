@@ -7,8 +7,8 @@ on the same department (§3.3: "No two promos should overlap on the same departm
 
 from __future__ import annotations
 
-import pytest
 import pandas as pd
+import pytest
 
 from knot_shore.config import GLOBAL_SEED
 from knot_shore.promotions import generate_promotions
@@ -48,8 +48,12 @@ def test_promo_durations_in_range(promos):
     ).dt.days + 1
     too_short = promos[durations < 3]
     too_long = promos[durations > 10]
-    assert too_short.empty, f"Promos shorter than 3 days: {too_short[['promo_id','start_date','end_date']]}"
-    assert too_long.empty, f"Promos longer than 10 days: {too_long[['promo_id','start_date','end_date']]}"
+    assert too_short.empty, (
+        f"Promos shorter than 3 days: {too_short[['promo_id','start_date','end_date']]}"
+    )
+    assert too_long.empty, (
+        f"Promos longer than 10 days: {too_long[['promo_id','start_date','end_date']]}"
+    )
 
 
 def test_discount_pct_within_type_range(promos):
@@ -58,7 +62,9 @@ def test_discount_pct_within_type_range(promos):
 
     for promo_type, (low, high) in PROMO_DISCOUNT_RANGE.items():
         subset = promos[promos["promo_type"] == promo_type]
-        bad = subset[(subset["discount_pct"] < low - 0.001) | (subset["discount_pct"] > high + 0.001)]
+        bad = subset[
+            (subset["discount_pct"] < low - 0.001) | (subset["discount_pct"] > high + 0.001)
+        ]
         assert bad.empty, (
             f"{promo_type} discount_pct out of range [{low}, {high}]: "
             f"{bad[['promo_id','discount_pct']].head()}"

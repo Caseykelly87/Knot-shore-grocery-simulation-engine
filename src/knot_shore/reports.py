@@ -73,11 +73,23 @@ _ROUTINE_NOTES: dict[int, list[str]] = {
 
 # Anomaly-style notes (natural language, no red flags)
 _ANOMALY_NOTES: list[str] = [
-    "Register system showed a brief reconciliation variance during the evening shift — will review with assistant manager at Monday morning stand-up.",
-    "POS terminal in lane 3 required a mid-day restart; transactions processed normally after reset. IT ticket submitted.",
-    "Minor discrepancy in end-of-day cash drawer reconciliation — standard recount procedure initiated.",
+    (
+        "Register system showed a brief reconciliation variance during the evening "
+        "shift — will review with assistant manager at Monday morning stand-up."
+    ),
+    (
+        "POS terminal in lane 3 required a mid-day restart; transactions processed "
+        "normally after reset. IT ticket submitted."
+    ),
+    (
+        "Minor discrepancy in end-of-day cash drawer reconciliation — standard "
+        "recount procedure initiated."
+    ),
     "Inventory scan on one pallet came back with an unexpected count; recount in progress.",
-    "One department tally appeared off during nightly close — reviewing with department lead tomorrow morning.",
+    (
+        "One department tally appeared off during nightly close — reviewing with "
+        "department lead tomorrow morning."
+    ),
 ]
 
 
@@ -207,7 +219,6 @@ def generate_store_report(
     labor_pct = float(summary_row["labor_cost_pct"])
 
     # Overall margin: derive from the department rows actually displayed
-    gross_total_display = float(store_dept["gross_sales"].sum())
     net_total_display = float(store_dept["net_sales"].sum())
     cogs_total_display = float(store_dept["cogs"].sum())
     gross_margin_display = net_total_display - cogs_total_display
