@@ -19,7 +19,6 @@ from __future__ import annotations
 from datetime import date
 
 import pandas as pd
-import pytest
 
 TEST_DATE = date(2024, 9, 10)
 

@@ -65,9 +65,7 @@ from knot_shore.config import (
     SERIES_ERS_MEATS,
     SERIES_SENTIMENT,
     SERIES_UNRATE,
-    STORES,
 )
-from knot_shore.factors import labor_pct_adjusted
 
 logger = structlog.get_logger(__name__)
 
@@ -536,7 +534,6 @@ def adjust(
         )
 
     # Step 6: Re-aggregate store_summary totals from adjusted dept_df
-    store_id_to_profile = {s["store_id"]: s["trade_area_profile"] for s in STORES}
     labor_mult = _labor_cost_multiplier(engine, target_date)
 
     new_summary_rows = []
@@ -546,9 +543,6 @@ def adjust(
         gross_total = round(float(s_rows["gross_sales"].sum()), 2)
         net_total = round(float(s_rows["net_sales"].sum()), 2)
         txn_total = int(s_rows["transactions"].sum())
-
-        profile = store_id_to_profile[store_id]
-        lp_base = labor_pct_adjusted(profile, target_date.year)
 
         # Scale existing labor_cost by the labor multiplier (preserves Stage 1 noise)
         new_labor = round(float(row["labor_cost"]) * labor_mult, 2)

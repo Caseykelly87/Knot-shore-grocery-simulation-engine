@@ -12,10 +12,6 @@ Verify that the derivation chain invariants hold for every row produced by Stage
 
 from __future__ import annotations
 
-import numpy as np
-import pandas as pd
-import pytest
-
 TOLERANCE = 0.02  # $0.02 rounding tolerance
 
 

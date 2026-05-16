@@ -219,7 +219,6 @@ def generate_store_report(
     labor_pct = float(summary_row["labor_cost_pct"])
 
     # Overall margin: derive from the department rows actually displayed
-    gross_total_display = float(store_dept["gross_sales"].sum())
     net_total_display = float(store_dept["net_sales"].sum())
     cogs_total_display = float(store_dept["cogs"].sum())
     gross_margin_display = net_total_display - cogs_total_display

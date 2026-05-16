@@ -15,7 +15,6 @@ from datetime import date
 from unittest.mock import MagicMock, patch
 
 import numpy as np
-import pytest
 
 from knot_shore.config import (
     REALISM_LABOR_CLAMP,
