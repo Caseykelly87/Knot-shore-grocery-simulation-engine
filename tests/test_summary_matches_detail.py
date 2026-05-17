@@ -13,7 +13,6 @@ labor_cost is store-level only and has no department breakdown — no test for t
 from __future__ import annotations
 
 import pandas as pd
-import pytest
 
 TOLERANCE = 0.05  # $0.05 rounding tolerance on aggregations
 

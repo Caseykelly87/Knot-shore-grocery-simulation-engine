@@ -6,9 +6,7 @@ from datetime import date
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
-from knot_shore.cli import cmd_backfill, resolve_backfill_dates
+from knot_shore.cli import cmd_backfill
 
 
 class TestCmdBackfill:

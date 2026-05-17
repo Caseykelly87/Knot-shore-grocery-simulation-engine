@@ -12,7 +12,6 @@ from __future__ import annotations
 from datetime import date
 
 import pandas as pd
-import pytest
 
 from knot_shore.config import DEPARTMENTS, GLOBAL_SEED, STORES
 from knot_shore.promotions import generate_promotions

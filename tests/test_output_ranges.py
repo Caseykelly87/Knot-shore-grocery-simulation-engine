@@ -57,8 +57,12 @@ def test_daily_store_revenue_range(multi_date_data):
     _, summary = multi_date_data
     too_low = summary[summary["net_sales_total"] < 30_000]
     too_high = summary[summary["net_sales_total"] > 140_000]
-    assert too_low.empty, f"Store(s) below $30K net daily: {too_low[['store_id','net_sales_total']]}"
-    assert too_high.empty, f"Store(s) above $140K net daily: {too_high[['store_id','net_sales_total']]}"
+    assert too_low.empty, (
+        f"Store(s) below $30K net daily: {too_low[['store_id','net_sales_total']]}"
+    )
+    assert too_high.empty, (
+        f"Store(s) above $140K net daily: {too_high[['store_id','net_sales_total']]}"
+    )
 
 
 def test_chain_gross_margin_range(multi_date_data):
@@ -107,8 +111,12 @@ def test_avg_ticket_range(multi_date_data):
     # Department-level avg_ticket is naturally lower; use a wide guard
     too_low = dept[dept["avg_ticket"] < 8]
     too_high = dept[dept["avg_ticket"] > 65]
-    assert too_low.empty, f"avg_ticket below $8 found: {too_low[['store_id','department_id','avg_ticket']].head()}"
-    assert too_high.empty, f"avg_ticket above $65 found: {too_high[['store_id','department_id','avg_ticket']].head()}"
+    assert too_low.empty, (
+        f"avg_ticket below $8 found: {too_low[['store_id','department_id','avg_ticket']].head()}"
+    )
+    assert too_high.empty, (
+        f"avg_ticket above $65 found: {too_high[['store_id','department_id','avg_ticket']].head()}"
+    )
 
 
 def test_transactions_per_store_day_range(multi_date_data):
@@ -116,8 +124,12 @@ def test_transactions_per_store_day_range(multi_date_data):
     _, summary = multi_date_data
     too_low = summary[summary["transactions_total"] < 800]
     too_high = summary[summary["transactions_total"] > 4_500]
-    assert too_low.empty, f"Store below 800 transactions: {too_low[['store_id','transactions_total']]}"
-    assert too_high.empty, f"Store above 4,500 transactions: {too_high[['store_id','transactions_total']]}"
+    assert too_low.empty, (
+        f"Store below 800 transactions: {too_low[['store_id','transactions_total']]}"
+    )
+    assert too_high.empty, (
+        f"Store above 4,500 transactions: {too_high[['store_id','transactions_total']]}"
+    )
 
 
 def test_labor_cost_pct_range(multi_date_data):

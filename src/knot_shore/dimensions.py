@@ -26,7 +26,6 @@ from knot_shore.config import (
     STORES,
 )
 
-
 # ---------------------------------------------------------------------------
 # Holiday helpers
 # ---------------------------------------------------------------------------
@@ -51,7 +50,12 @@ def _last_weekday_of_month(year: int, month: int, weekday: int) -> date:
 
 
 def _easter(year: int) -> date:
-    """Meeus/Jones/Butcher algorithm for Easter Sunday."""
+    """Meeus/Jones/Butcher algorithm for Easter Sunday.
+
+    Variable names follow the canonical published algorithm; `ll`
+    stands in for the formula's `l` because that single letter is
+    ambiguous with the digit one in many fonts.
+    """
     a = year % 19
     b = year // 100
     c = year % 100
@@ -62,10 +66,10 @@ def _easter(year: int) -> date:
     h = (19 * a + b - d - g + 15) % 30
     i = c // 4
     k = c % 4
-    l = (32 + 2 * e + 2 * i - h - k) % 7
-    m = (a + 11 * h + 22 * l) // 451
-    month = (h + l - 7 * m + 114) // 31
-    day = ((h + l - 7 * m + 114) % 31) + 1
+    ll = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * ll) // 451
+    month = (h + ll - 7 * m + 114) // 31
+    day = ((h + ll - 7 * m + 114) % 31) + 1
     return date(year, month, day)
 
 
