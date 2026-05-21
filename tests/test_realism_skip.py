@@ -87,20 +87,47 @@ def test_adjust_returns_unchanged_when_no_db_and_no_fixture(monkeypatch, tmp_pat
 
 
 def test_full_pipeline_runs_without_db(monkeypatch, tmp_path):
-    """Full init + run pipeline completes without error when --no-realism is passed."""
+    """Full init + run pipeline writes correctly-shaped output with --no-realism.
+
+    Verifies not just that the daily files appear, but that they carry the
+    expected schema and cover all eight stores and all ten departments.
+    Row counts are not pinned exactly because anomaly injection may add or
+    drop a row; store and department coverage is the stable invariant.
+    """
     monkeypatch.delenv("KNOT_SHORE_DB_URL", raising=False)
 
     import knot_shore.realism as realism
     realism.clear_cache()
 
     from knot_shore.cli import cmd_init, cmd_run
+    from knot_shore.config import DEPARTMENTS, STORES
 
     cmd_init(seed=42, output_dir=tmp_path)
     cmd_run(seed=42, output_dir=tmp_path, anchor=TEST_DATE, no_realism=True)
 
     from knot_shore.output import daily_dir_for
-    dept_path = daily_dir_for(tmp_path, TEST_DATE) / "department_sales.csv"
-    assert dept_path.exists(), "department_sales.csv not written"
+    daily_dir = daily_dir_for(tmp_path, TEST_DATE)
 
-    df = pd.read_csv(dept_path)
-    assert len(df) > 0, "department_sales.csv is empty"
+    dept_path = daily_dir / "department_sales.csv"
+    summary_path = daily_dir / "store_summary.csv"
+    assert dept_path.exists(), "department_sales.csv not written"
+    assert summary_path.exists(), "store_summary.csv not written"
+
+    dept = pd.read_csv(dept_path)
+    summary = pd.read_csv(summary_path)
+
+    expected_store_ids = {s["store_id"] for s in STORES}
+    expected_dept_ids = {d["department_id"] for d in DEPARTMENTS}
+
+    # store_summary: exactly one row per store.
+    assert len(summary) == len(expected_store_ids), (
+        f"Expected {len(expected_store_ids)} store summary rows, got {len(summary)}"
+    )
+    assert set(summary["store_id"]) == expected_store_ids
+    assert {"store_id", "net_sales_total", "transactions_total"} <= set(summary.columns)
+
+    # department_sales: every store and every department represented.
+    assert {"store_id", "department_id", "gross_sales", "net_sales"} <= set(dept.columns)
+    assert set(dept["store_id"]) == expected_store_ids, "Not all stores in department_sales"
+    assert set(dept["department_id"]) == expected_dept_ids, "Not all departments present"
+    assert (dept["net_sales"] >= 0).all(), "Negative net_sales in pipeline output"

@@ -17,7 +17,9 @@ import pandas as pd
 import pytest
 
 from knot_shore.anomalies import (
+    TYPE_DUPLICATE,
     TYPE_INTEGRITY,
+    TYPE_MARGIN,
     TYPE_MISSING,
     _inject_duplicate_row,
     _inject_integrity_breach,
@@ -148,14 +150,42 @@ def test_duplicate_row_adds_row(base_dept_df, base_summary_df):
 # inject() function integration
 # ---------------------------------------------------------------------------
 
-def test_inject_runs_without_error(base_dept_df, base_summary_df):
-    """inject() should complete without exceptions for any seed."""
+def test_inject_output_schema_and_anomaly_validity(base_dept_df, base_summary_df):
+    """inject() returns the documented triple with a well-formed anomaly log.
+
+    For every seed the anomaly_log must carry the five-column schema, every
+    logged anomaly_type must be one of the four known types, and every log
+    row must reference a store and department present in the input frame
+    with a non-empty description.
+    """
+    valid_types = {TYPE_INTEGRITY, TYPE_MISSING, TYPE_MARGIN, TYPE_DUPLICATE}
+    log_cols = {"date_key", "store_id", "department_id", "anomaly_type", "description"}
+    input_stores = set(base_dept_df["store_id"])
+    input_depts = set(base_dept_df["department_id"])
+
     for seed in [0, 1, 42, 12345]:
         dept_out, summary_out, log = inject(
             base_dept_df.copy(), base_summary_df.copy(), TEST_DATE, global_seed=seed
         )
         assert isinstance(dept_out, pd.DataFrame)
-        assert isinstance(log, pd.DataFrame)
+        assert isinstance(summary_out, pd.DataFrame)
+        assert log_cols <= set(log.columns), (
+            f"seed {seed}: anomaly_log missing columns {log_cols - set(log.columns)}"
+        )
+
+        for _, row in log.iterrows():
+            assert row["anomaly_type"] in valid_types, (
+                f"seed {seed}: unknown anomaly_type {row['anomaly_type']!r}"
+            )
+            assert row["store_id"] in input_stores, (
+                f"seed {seed}: anomaly references unknown store {row['store_id']}"
+            )
+            assert row["department_id"] in input_depts, (
+                f"seed {seed}: anomaly references unknown department {row['department_id']}"
+            )
+            assert isinstance(row["description"], str) and row["description"], (
+                f"seed {seed}: anomaly row has an empty description"
+            )
 
 
 def test_inject_at_most_one_anomaly_per_store(base_dept_df, base_summary_df):
