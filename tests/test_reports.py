@@ -43,13 +43,30 @@ def report_frames():
     return dept_df, summary_df, promos
 
 
-def test_generate_store_report_contains_required_sections(report_frames):
+def test_generate_store_report_sections_and_store_total(report_frames):
+    """The report carries every required section and reports this store's
+    identity and store-total net sales correctly for the input data."""
     dept_df, summary_df, promos_df = report_frames
+    store = STORES[0]
     txt = generate_store_report(
-        STORES[0], dept_df, summary_df, promos_df, TEST_DATE, anomaly_log_df=pd.DataFrame()
+        store, dept_df, summary_df, promos_df, TEST_DATE, anomaly_log_df=pd.DataFrame()
     )
     for section in _REQUIRED_SECTIONS:
         assert section in txt, f"Required section '{section}' missing from report"
+
+    # The header identifies this store by zero-padded id.
+    assert f"(#{store['store_id']:03d})" in txt, "Report header missing store id"
+
+    # The STORE TOTAL line reports the sum of this store's department
+    # net_sales, formatted the way the report formats currency ($X,XXX).
+    store_dept = dept_df[dept_df["store_id"] == store["store_id"]]
+    expected_total = f"${store_dept['net_sales'].sum():,.0f}"
+    store_total_line = next(
+        line for line in txt.splitlines() if line.startswith("STORE TOTAL")
+    )
+    assert expected_total in store_total_line, (
+        f"STORE TOTAL line {store_total_line!r} missing net sales {expected_total}"
+    )
 
 
 def test_routine_note_used_when_no_anomaly(report_frames):
@@ -79,10 +96,21 @@ def test_anomaly_note_used_when_store_has_anomaly(report_frames):
     )
 
 
-def test_generate_all_reports_writes_eight_files(tmp_path, report_frames):
+def test_generate_all_reports_writes_one_correct_file_per_store(tmp_path, report_frames):
+    """generate_all_reports writes exactly one report per store, and each
+    file is the report for the store its filename names."""
     dept_df, summary_df, promos_df = report_frames
     generate_all_reports(
         TEST_DATE, dept_df, summary_df, promos_df, tmp_path, anomaly_log_df=pd.DataFrame()
     )
-    out = sorted((tmp_path / "reports" / TEST_DATE.isoformat()).glob("store_*_report.txt"))
+    report_dir = tmp_path / "reports" / TEST_DATE.isoformat()
+    out = sorted(report_dir.glob("store_*_report.txt"))
     assert len(out) == 8, f"Expected 8 report files, got {len(out)}"
+
+    for store in STORES:
+        path = report_dir / f"store_{store['store_id']:03d}_report.txt"
+        assert path.exists(), f"Missing report file for store {store['store_id']}"
+        txt = path.read_text(encoding="utf-8")
+        assert f"(#{store['store_id']:03d})" in txt, (
+            f"{path.name} does not identify store {store['store_id']}"
+        )
