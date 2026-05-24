@@ -83,7 +83,11 @@ The test lives in `tests/` and so runs in CI as part of the standard
 
 ## Test categories observed
 
-Reconnaissance classified the 136 tests present at the start of this pass:
+Snapshot from the May 2026 test-quality pass. The categorization below
+is preserved as historical context — the table records what the suite
+looked like *at the start* of that pass, not today's category counts.
+
+Reconnaissance classified the 136 tests present at the start of the pass:
 
 | Category             | Count |
 |----------------------|-------|
@@ -92,10 +96,12 @@ Reconnaissance classified the 136 tests present at the start of this pass:
 | Ceremony             | 2     |
 | Uncategorizable      | 0     |
 
-The suite was already mostly business-correctness. The work in this pass
-converted eight structural/ceremony tests covering hot-path code into
+The suite was already mostly business-correctness. The pass converted
+eight structural/ceremony tests covering hot-path code into
 business-correctness tests and added two tests (the ISO-week-53 cap and
-the end-to-end determinism check), bringing the suite to 138 tests.
+the end-to-end determinism check), bringing the suite to 138 tests
+(the current `pytest --collect-only -q` count as of May 2026; re-run
+collection rather than trusting this number if much time has passed).
 
 ## Known weak areas
 
