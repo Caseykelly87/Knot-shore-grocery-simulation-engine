@@ -1,4 +1,4 @@
-# Sim Engine Testing Notes
+# Simulation Engine Testing Notes
 
 Reference for how the simulation engine's test suite is structured and what
 "a good test" means in this codebase. Written for engineers extending the
