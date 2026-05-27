@@ -195,7 +195,10 @@ def generate_dim_calendar() -> pd.DataFrame:
         is_weekend = dow_num >= 6
         is_snap = current.day <= 10
 
-        # ISO calendar week, capped at 52
+        # ISO week 53 (occurs in years like 2020 and 2026) is capped to
+        # fiscal week 52: the 4-4-5 fiscal calendar has no period for
+        # week 53. The cap is intentional and pinned by
+        # test_fiscal_week_53_capped_to_52.
         iso_week = current.isocalendar()[1]
         fiscal_week = min(iso_week, 52)
 
