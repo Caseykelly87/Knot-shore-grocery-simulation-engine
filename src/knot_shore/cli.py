@@ -275,6 +275,7 @@ def cmd_run(
     output_dir: Path,
     anchor: date,
     no_realism: bool,
+    rebuild_manifest: bool = False,
 ) -> None:
     from knot_shore import realism  # noqa: PLC0415
     from knot_shore.date_resolver import resolve_required_dates  # noqa: PLC0415
@@ -292,7 +293,7 @@ def cmd_run(
 
     use_realism = _check_realism(no_realism, realism)
 
-    generated, anomaly_summaries = _run_pipeline(
+    generated, _ = _run_pipeline(
         target_dates=target_dates,
         promos_df=promos_df,
         seed=seed,
@@ -306,8 +307,8 @@ def cmd_run(
         run_dates=target_dates,
         realism_active=use_realism,
         global_seed=seed,
-        anomaly_summaries=anomaly_summaries,
         command="run",
+        rebuild=rebuild_manifest,
     )
 
     logger.info(
@@ -329,6 +330,7 @@ def cmd_backfill(
     end_date: date | None,
     days: int,
     no_realism: bool,
+    rebuild_manifest: bool = False,
 ) -> None:
     """Generate a contiguous range of dates for historical backfill.
 
@@ -363,7 +365,7 @@ def cmd_backfill(
         end_date=target_dates[-1].isoformat(),
     )
 
-    generated, anomaly_summaries = _run_pipeline(
+    generated, _ = _run_pipeline(
         target_dates=target_dates,
         promos_df=promos_df,
         seed=seed,
@@ -377,8 +379,8 @@ def cmd_backfill(
         run_dates=target_dates,
         realism_active=use_realism,
         global_seed=seed,
-        anomaly_summaries=anomaly_summaries,
         command="backfill",
+        rebuild=rebuild_manifest,
     )
 
     logger.info(
@@ -511,6 +513,16 @@ def _build_parser() -> argparse.ArgumentParser:
         default=False,
         help="Disable Stage 2 realism engine even if KNOT_SHORE_DB_URL is set.",
     )
+    run_p.add_argument(
+        "--rebuild-manifest",
+        action="store_true",
+        default=False,
+        help=(
+            "Force a full re-scan of every previously generated date when "
+            "updating manifest.json (use when the manifest has drifted "
+            "from on-disk state)."
+        ),
+    )
 
     # ---- backfill ----
     bf_p = sub.add_parser(
@@ -558,6 +570,16 @@ def _build_parser() -> argparse.ArgumentParser:
         default=False,
         help="Disable Stage 2 realism engine even if KNOT_SHORE_DB_URL is set.",
     )
+    bf_p.add_argument(
+        "--rebuild-manifest",
+        action="store_true",
+        default=False,
+        help=(
+            "Force a full re-scan of every previously generated date when "
+            "updating manifest.json (use when the manifest has drifted "
+            "from on-disk state)."
+        ),
+    )
 
     # ---- reports ----
     rep_p = sub.add_parser("reports", help="(Re-)generate store reports for a date.")
@@ -586,6 +608,7 @@ def main(argv: list[str] | None = None) -> None:
             output_dir=args.output,
             anchor=anchor,
             no_realism=args.no_realism,
+            rebuild_manifest=args.rebuild_manifest,
         )
 
     elif args.command == "backfill":
@@ -596,6 +619,7 @@ def main(argv: list[str] | None = None) -> None:
             end_date=args.end_date,
             days=args.days,
             no_realism=args.no_realism,
+            rebuild_manifest=args.rebuild_manifest,
         )
 
     elif args.command == "reports":

@@ -154,9 +154,9 @@ On each generated date, per store there is a 5% probability of injecting one ano
 | `margin_outlier` | 20% | One department's `gross_margin_pct` is set to an unrealistically high value (0.95, when cogs collapses to 5% of net sales) or a negative value (when cogs is inflated to 1.05–1.30× net sales). |
 | `duplicate_row` | 10% | One department row is duplicated exactly, inflating that department's totals on that date. |
 
-The ground-truth `anomaly_log.csv` records every injection: date, store_id, anomaly_type, and any per-type details (e.g., the affected department_id). The platform's downstream detection rules (in `economic-data-etl`) look for anomalies across six rules at two grains — store-day bands for revenue, labor percentage, average ticket, and transactions, a year-over-year ratio rule, a rolling 28-day z-score on revenue, and a department-grain `department_coverage` structural rule — which is a different set of phenomena than what's injected here. The injection log is the platform's ground truth for evaluating detection quality, but no platform code reads it at runtime; only the upstream `economic-data-etl/scripts/evaluate_detection.py` reads it.
+The ground-truth `anomaly_log.csv` records every injection: date, store_id, anomaly_type, and any per-type details (e.g., the affected department_id). The platform's downstream detection rules (in `economic-data-etl`) look for anomalies across seven rules at two grains — store-day bands for revenue, labor percentage, average ticket, and transactions, a year-over-year ratio rule, a rolling 28-day z-score on revenue, and a department-grain `department_coverage` structural rule — which is a different set of phenomena than what's injected here. The injection log is the platform's ground truth for evaluating detection quality, but no platform code reads it at runtime; only the upstream `economic-data-etl/scripts/evaluate_detection.py` reads it.
 
-Seeding for injection uses the same per-date scheme as Stage 1 with an offset: `date_seed + 1_000_000`. Determinism holds.
+Seeding for injection uses the same per-date scheme as Stage 1 with an offset: `date_seed + RNG_OFFSET_ANOMALIES` (defined in `config.py`). Determinism holds.
 
 ## Output structure
 
@@ -283,7 +283,7 @@ python -m pytest -v
 python -m pytest --cov=src/knot_shore --cov-report=term-missing
 ```
 
-The test suite has 138 tests covering:
+The test suite has 140 tests covering:
 
 - **Determinism** — byte-identity across successive runs of the same seed (the single most important property).
 - **Anomaly injection** — bounded rate (5% per store-day) verified against tolerance, ground-truth log integrity.
@@ -305,6 +305,8 @@ knot-shore-grocery-simulation-engine    →    economic-data-etl    →    econo
 ```
 
 The engine produces CSV files under `output/daily/{MM}/{DD}/{YYYY}/`. The ETL repo reads that tree, validates schemas, transforms into canonical parquet artifacts, and applies static-band detection rules. The API serves the canonical artifacts as JSON. The portal consumes the API and renders three primary dashboards plus an architectural documentation hub.
+
+The platform's deployed portal is at [https://knot-shore-portal.vercel.app](https://knot-shore-portal.vercel.app) (offline mode, bundled fixtures); the full-stack technical demo is the orchestration repo at [https://github.com/Caseykelly87/knot-shore-platform](https://github.com/Caseykelly87/knot-shore-platform).
 
 Reader-grade documentation for the engine — determinism, anomaly injection, paired-year mechanics — lives at the portal's [`/about/sim-engine`](https://github.com/Caseykelly87/knot-shore-portal) page. The platform-wide architectural narrative is at [`/about/architecture`](https://github.com/Caseykelly87/knot-shore-portal); decision records are at [`/about/decisions`](https://github.com/Caseykelly87/knot-shore-portal).
 
