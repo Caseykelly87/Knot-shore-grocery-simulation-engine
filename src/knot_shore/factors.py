@@ -18,6 +18,7 @@ from datetime import date
 import pandas as pd
 
 from knot_shore.config import (
+    DEPARTMENTS,
     DOW_FACTORS,
     LABOR_PCT,
     LABOR_WAGE_DRIFT,
@@ -27,6 +28,13 @@ from knot_shore.config import (
     YOY_BASE_DATE,
     YOY_GROWTH_RATE,
 )
+
+# Department-name → department-id map, built once from config.DEPARTMENTS.
+# promos_df carries department_id (never department_name); the lookup
+# bridges the caller's by-name argument to the by-id column on the frame.
+_DEPT_ID_BY_NAME: dict[str, int] = {
+    d["department_name"]: d["department_id"] for d in DEPARTMENTS
+}
 
 
 def seasonal_factor(seasonal_profile: str, month: int) -> float:
@@ -62,19 +70,11 @@ def promo_volume_factor(
     if promos_df.empty:
         return (1.0, 0.0, False)
 
-    # Resolve the department mask: prefer department_name when the caller supplied
-    # it, otherwise look up department_id via the DEPARTMENTS config.
-    if "department_name" in promos_df.columns:
-        dept_mask = promos_df["department_name"] == department_name
-    else:
-        # Resolve department_name via department_id using the DEPARTMENTS config
-        from knot_shore.config import DEPARTMENTS as _DEPARTMENTS
-        dept_id_map = {d["department_name"]: d["department_id"] for d in _DEPARTMENTS}
-        dept_id = dept_id_map.get(department_name)
-        if dept_id is None:
-            return (1.0, 0.0, False)
-        dept_mask = promos_df["department_id"] == dept_id
+    dept_id = _DEPT_ID_BY_NAME.get(department_name)
+    if dept_id is None:
+        return (1.0, 0.0, False)
 
+    dept_mask = promos_df["department_id"] == dept_id
     date_mask = (promos_df["start_date"] <= target_date) & (promos_df["end_date"] >= target_date)
     active = promos_df[dept_mask & date_mask]
 

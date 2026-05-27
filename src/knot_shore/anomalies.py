@@ -31,6 +31,7 @@ from knot_shore.config import (
     ANOMALY_MISSING_DEPT_WEIGHT,
     ANOMALY_PROBABILITY,
     GLOBAL_SEED,
+    RNG_OFFSET_ANOMALIES,
     STORES,
 )
 
@@ -76,7 +77,7 @@ def inject(
         anomaly_log_df always has the correct columns, with 0 rows if none injected.
     """
     date_seed = global_seed + target_date.toordinal()
-    rng = np.random.default_rng(date_seed + 1_000_000)  # offset avoids collision with Stage 1
+    rng = np.random.default_rng(date_seed + RNG_OFFSET_ANOMALIES)
 
     dept_df = dept_df.copy()
     summary_df = summary_df.copy()
