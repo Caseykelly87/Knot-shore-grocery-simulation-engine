@@ -306,6 +306,8 @@ knot-shore-grocery-simulation-engine    →    economic-data-etl    →    econo
 
 The engine produces CSV files under `output/daily/{MM}/{DD}/{YYYY}/`. The ETL repo reads that tree, validates schemas, transforms into canonical parquet artifacts, and applies static-band detection rules. The API serves the canonical artifacts as JSON. The portal consumes the API and renders three primary dashboards plus an architectural documentation hub.
 
+The platform's deployed portal is at [https://knot-shore-portal.vercel.app](https://knot-shore-portal.vercel.app) (offline mode, bundled fixtures); the full-stack technical demo is the orchestration repo at [https://github.com/Caseykelly87/knot-shore-platform](https://github.com/Caseykelly87/knot-shore-platform).
+
 Reader-grade documentation for the engine — determinism, anomaly injection, paired-year mechanics — lives at the portal's [`/about/sim-engine`](https://github.com/Caseykelly87/knot-shore-portal) page. The platform-wide architectural narrative is at [`/about/architecture`](https://github.com/Caseykelly87/knot-shore-portal); decision records are at [`/about/decisions`](https://github.com/Caseykelly87/knot-shore-portal).
 
 Adjacent repositories:
