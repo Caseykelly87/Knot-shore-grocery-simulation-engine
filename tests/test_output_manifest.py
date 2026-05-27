@@ -15,7 +15,7 @@ from datetime import date
 import pandas as pd
 import pytest
 
-from knot_shore.cli import cmd_init, cmd_run
+from knot_shore.cli import cmd_backfill, cmd_init, cmd_run
 
 
 @pytest.fixture(autouse=True)
@@ -70,3 +70,85 @@ def test_anomaly_summary_matches_disk_after_regeneration(tmp_path):
             f"Manifest by_type[{k}]={manifest['anomaly_summary']['by_type'][k]} "
             f"but on-disk count={on_disk_by_type.get(k, 0)}"
         )
+
+
+def test_incremental_manifest_two_window_backfills(tmp_path):
+    """Two non-overlapping backfills accumulate cumulative_row_counts correctly.
+
+    Business-correctness: the incremental refactor reads counters from the
+    previous manifest and adds only newly-written dates. If it were broken
+    (e.g., reset counts each call, or rescanned the wrong subset), totals
+    after the second backfill would diverge from the independent disk sum.
+    """
+    cmd_init(seed=42, output_dir=tmp_path)
+
+    cmd_backfill(
+        seed=42, output_dir=tmp_path,
+        start_date=date(2024, 1, 1), end_date=None, days=7,
+        no_realism=True,
+    )
+    manifest_1 = json.loads((tmp_path / "manifest.json").read_text())
+    counts_1 = dict(manifest_1["cumulative_row_counts"])
+
+    cmd_backfill(
+        seed=42, output_dir=tmp_path,
+        start_date=date(2024, 2, 1), end_date=None, days=5,
+        no_realism=True,
+    )
+    manifest_2 = json.loads((tmp_path / "manifest.json").read_text())
+    counts_2 = manifest_2["cumulative_row_counts"]
+
+    # Independent on-disk reconstruction
+    expected_dept = sum(len(pd.read_csv(p)) for p in tmp_path.rglob("department_sales.csv"))
+    expected_summary = sum(len(pd.read_csv(p)) for p in tmp_path.rglob("store_summary.csv"))
+
+    assert counts_2["department_sales"] == expected_dept, (
+        f"Manifest department_sales={counts_2['department_sales']} but disk={expected_dept}"
+    )
+    assert counts_2["store_summary"] == expected_summary, (
+        f"Manifest store_summary={counts_2['store_summary']} but disk={expected_summary}"
+    )
+
+    assert counts_2["department_sales"] > counts_1["department_sales"]
+    assert counts_2["store_summary"] > counts_1["store_summary"]
+
+    expected_anomaly_total = 0
+    for p in tmp_path.rglob("anomaly_log.csv"):
+        expected_anomaly_total += len(pd.read_csv(p))
+    assert manifest_2["anomaly_summary"]["total_injected"] == expected_anomaly_total
+
+    assert manifest_2["total_dates_generated"] == 12
+
+
+def test_rebuild_manifest_recovers_from_drift(tmp_path):
+    """--rebuild-manifest path reconciles counts after a date-folder is removed.
+
+    Structural: after deletion the incremental path keeps stale counts
+    because the deleted date is still in dates_generated; --rebuild
+    re-scans everything in dates_generated and the totals collapse to
+    what disk actually holds.
+    """
+    cmd_init(seed=42, output_dir=tmp_path)
+    cmd_backfill(
+        seed=42, output_dir=tmp_path,
+        start_date=date(2024, 3, 1), end_date=None, days=5,
+        no_realism=True,
+    )
+    manifest_before = json.loads((tmp_path / "manifest.json").read_text())
+    dept_before = manifest_before["cumulative_row_counts"]["department_sales"]
+
+    daily_path = next(tmp_path.rglob("department_sales.csv")).parent
+    shutil.rmtree(daily_path)
+
+    cmd_run(
+        seed=42, output_dir=tmp_path, anchor=date(2024, 3, 10),
+        no_realism=True, rebuild_manifest=True,
+    )
+
+    manifest_after = json.loads((tmp_path / "manifest.json").read_text())
+    expected_dept = sum(
+        len(pd.read_csv(p)) for p in tmp_path.rglob("department_sales.csv")
+    )
+
+    assert manifest_after["cumulative_row_counts"]["department_sales"] == expected_dept
+    assert manifest_after["cumulative_row_counts"]["department_sales"] != dept_before
