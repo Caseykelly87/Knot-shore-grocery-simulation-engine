@@ -28,6 +28,25 @@ GENERATOR_VERSION: str = "1.0.0"
 CALENDAR_START: date = date(2023, 1, 1)
 CALENDAR_END: date = date(2026, 12, 31)
 
+# ---------------------------------------------------------------------------
+# RNG stream isolation offsets (§4.1 / §5)
+# ---------------------------------------------------------------------------
+#
+# Each per-date RNG seeds from (global_seed + date.toordinal() + offset).
+# The offsets keep the streams that fire on the same date independent
+# — same date and same seed yields byte-identical output across runs,
+# but the sales stream, the anomaly stream, and the realism stream
+# produce different sequences because each starts from a different
+# offset into the np.random state space.
+#
+# Offsets are orders of magnitude apart so the streams' distributions
+# don't accidentally overlap — 1_000_000 and 999_999 are large enough
+# that they can't collide with realistic seeds.
+
+RNG_OFFSET_SALES: int = 0
+RNG_OFFSET_ANOMALIES: int = 1_000_000
+RNG_OFFSET_REALISM: int = 999_999
+
 # Noise distribution: N(µ=1.0, σ) clipped to [lower, upper]
 NOISE_SIGMA_SALES: float = 0.04
 NOISE_CLIP_LOWER: float = 0.88

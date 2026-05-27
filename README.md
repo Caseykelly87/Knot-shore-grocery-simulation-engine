@@ -156,7 +156,7 @@ On each generated date, per store there is a 5% probability of injecting one ano
 
 The ground-truth `anomaly_log.csv` records every injection: date, store_id, anomaly_type, and any per-type details (e.g., the affected department_id). The platform's downstream detection rules (in `economic-data-etl`) look for anomalies across seven rules at two grains — store-day bands for revenue, labor percentage, average ticket, and transactions, a year-over-year ratio rule, a rolling 28-day z-score on revenue, and a department-grain `department_coverage` structural rule — which is a different set of phenomena than what's injected here. The injection log is the platform's ground truth for evaluating detection quality, but no platform code reads it at runtime; only the upstream `economic-data-etl/scripts/evaluate_detection.py` reads it.
 
-Seeding for injection uses the same per-date scheme as Stage 1 with an offset: `date_seed + 1_000_000`. Determinism holds.
+Seeding for injection uses the same per-date scheme as Stage 1 with an offset: `date_seed + RNG_OFFSET_ANOMALIES` (defined in `config.py`). Determinism holds.
 
 ## Output structure
 
