@@ -54,6 +54,7 @@ from knot_shore.config import (
     REALISM_SENTIMENT_COEFF,
     REALISM_UNEMP_COEFF,
     REALISM_WAGES_COEFF,
+    RNG_OFFSET_REALISM,
     SERIES_AVG_WAGES,
     SERIES_ERS_ALL_FOOD,
     SERIES_ERS_BEVERAGES,
@@ -146,6 +147,9 @@ def _get_engine() -> Any | None:
         _DB_ENGINE = engine
         _DB_AVAILABLE = True
         return _DB_ENGINE
+    # Broad catch is intentional: SQLAlchemy / DB-driver / network errors
+    # surface as a wide tree of exception classes, and any of them should
+    # demote the engine to "unavailable" rather than crash the run.
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "realism_db_connect_failed",
@@ -183,6 +187,9 @@ def _load_series_from_db(engine: Any, series_key: str) -> pd.DataFrame:
         df = df.sort_values("date").reset_index(drop=True)
         return df
 
+    # Broad catch is intentional: a failure loading one series should yield
+    # an empty frame so the caller treats the series as missing and (per
+    # _resolve_source) falls back to the fixture, not crash the run.
     except Exception as exc:  # noqa: BLE001
         logger.warning("realism_db_load_failed", series=series_key, error=str(exc))
         return pd.DataFrame(columns=["date", "value"])
@@ -209,6 +216,10 @@ def _load_fixture_frame() -> pd.DataFrame | None:
 
     try:
         df = pd.read_parquet(BUNDLED_FIXTURE_PATH)
+    # Broad catch is intentional: pyarrow / parquet errors and OS-level IO
+    # errors both surface here, and either one means the fixture path is
+    # unusable — treat as "no fixture" so resolve_source moves to the next
+    # tier instead of crashing.
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "realism_fixture_read_failed",
@@ -278,6 +289,9 @@ def _resolve_source() -> str:
                     )
                 ).fetchall()
             db_series = {r[0] for r in rows}
+        # Broad catch is intentional: a failed probe should look like an
+        # empty series set so the layer falls back to the fixture, not
+        # crash the run.
         except Exception as exc:  # noqa: BLE001
             logger.warning("realism_db_series_probe_failed", error=str(exc))
             db_series = set()
@@ -508,7 +522,7 @@ def adjust(
     dept_df["gross_sales"] = (dept_df["gross_sales"] * vol_mult).round(2)
 
     # Step 3: Recalculate derivation chain (uses helper cols still present from Stage 1)
-    rng = np.random.default_rng(global_seed + target_date.toordinal() + 999_999)
+    rng = np.random.default_rng(global_seed + target_date.toordinal() + RNG_OFFSET_REALISM)
     dept_df = apply_derivations(dept_df, rng)
 
     # Steps 4-5: Apply margin pressure per department
