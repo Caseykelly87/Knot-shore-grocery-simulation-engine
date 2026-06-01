@@ -10,6 +10,7 @@ Verify that anomaly injection:
 
 from __future__ import annotations
 
+import math
 from datetime import date
 
 import numpy as np
@@ -199,6 +200,63 @@ def test_inject_at_most_one_anomaly_per_store(base_dept_df, base_summary_df):
             counts = log.groupby("store_id").size()
             assert (counts <= 1).all(), \
                 f"Seed {seed}: multiple anomalies for one store: {counts[counts > 1]}"
+
+
+# ---------------------------------------------------------------------------
+# Injection-rate statistical validation
+# ---------------------------------------------------------------------------
+
+def test_injection_rate_within_binomial_confidence_interval(base_dept_df, base_summary_df):
+    """Empirical injection rate is statistically consistent with the 5% contract.
+
+    Business-correctness. inject() fires one independent Bernoulli(p) trial per
+    store-day (config.ANOMALY_PROBABILITY = 0.05), so the number of anomalies
+    injected over N store-day trials is Binomial(N, p). A single fixed-seed run
+    produces exactly one count and so validates only the RNG wiring, not the
+    rate. To exercise the *rate mechanism* this accumulates a large sample of
+    independent trials by sweeping a fixed sequence of integer seeds: each call
+    draws one Bernoulli per store, and consecutive seeds feed numpy's
+    SeedSequence to give independent PCG64 streams. All eight stores are
+    populated, so every fire appends exactly one log row and len(log) is the
+    success count per call.
+
+    The center is the documented 5% contract hardcoded as DOCUMENTED_RATE, not
+    read back from config.ANOMALY_PROBABILITY: validating against the
+    externally-known value (rather than the constant the mechanism itself reads)
+    is what gives the test teeth — a config change to a wrong rate makes the
+    empirical rate drift away from 0.05 and fails this assertion instead of
+    moving the target in lockstep with it.
+
+    The seed sweep is fixed, so p̂ is deterministic and the test is reproducible.
+    It asserts |p̂ - p| <= z * sqrt(p*(1-p)/N) with z = 3.9 (~99.99% two-sided).
+    The normal approximation holds because N*p and N*(1-p) are both far above 10
+    at this N. The bound is wide enough that a correct engine essentially never
+    fails by chance, yet tight enough to reject a clearly-wrong rate: doubling to
+    0.10 or halving to 0.02 lands tens of standard errors outside it.
+    """
+    DOCUMENTED_RATE = 0.05  # contract: 5% per store-day (README, config.ANOMALY_PROBABILITY)
+    p = DOCUMENTED_RATE
+    n_calls = 1500
+    trials_per_call = len(STORES)  # one Bernoulli draw per store-day
+
+    fires = 0
+    for seed in range(n_calls):
+        # inject() copies its inputs internally, so base_dept_df / base_summary_df
+        # are never mutated and can be reused across the sweep.
+        _, _, log = inject(base_dept_df, base_summary_df, TEST_DATE, global_seed=seed)
+        fires += len(log)
+
+    n_trials = n_calls * trials_per_call
+    p_hat = fires / n_trials
+
+    z = 3.9  # ~99.99% two-sided normal bound on a Binomial(N, p) proportion
+    tolerance = z * math.sqrt(p * (1.0 - p) / n_trials)
+
+    assert abs(p_hat - p) <= tolerance, (
+        f"Empirical injection rate {p_hat:.5f} over N={n_trials} trials is outside "
+        f"the {z}σ binomial interval around {p} "
+        f"(|Δ|={abs(p_hat - p):.5f} > {tolerance:.5f})"
+    )
 
 
 # ---------------------------------------------------------------------------

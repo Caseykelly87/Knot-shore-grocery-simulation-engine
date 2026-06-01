@@ -55,7 +55,12 @@ The load-bearing data guarantees and the tests that hold them:
 - **Anomaly injection** — `test_anomaly_injection.py`. Each injector
   produces its specific data effect; the anomaly log carries the
   five-column schema; every logged row references a real store and
-  department; at most one anomaly per store per date.
+  department; at most one anomaly per store per date. The per-store-day
+  injection rate is itself validated:
+  `test_injection_rate_within_binomial_confidence_interval` sweeps a
+  fixed sequence of seeds to accumulate thousands of independent
+  Bernoulli trials and asserts the empirical rate sits inside a
+  ~99.99% binomial confidence interval around the documented 5%.
 - **Calendar dimension** — `test_calendar.py`. Known dates carry known
   holiday flags, ISO/fiscal weeks, fiscal periods, quarters, and
   day-of-week names; the ISO-week-53 cap is verified explicitly.
