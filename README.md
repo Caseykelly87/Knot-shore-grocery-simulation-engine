@@ -283,10 +283,10 @@ python -m pytest -v
 python -m pytest --cov=src/knot_shore --cov-report=term-missing
 ```
 
-The test suite has 140 tests covering:
+The test suite has 141 tests covering:
 
 - **Determinism** — byte-identity across successive runs of the same seed (the single most important property).
-- **Anomaly injection** — bounded rate (5% per store-day) verified against tolerance, ground-truth log integrity.
+- **Anomaly injection** — the 5%-per-store-day rate verified against a binomial confidence interval over a large sample of independent trials, ground-truth log integrity.
 - **Pipeline contracts** — Stage 1 → Stage 2 → Stage 3 composition; the `--no-realism` opt-out path produces base data identical to what realism would have received.
 - **CLI surface** — argument parsing, mutual exclusion, command dispatch.
 - **Output integrity** — directory layout, file presence, summary-vs-detail reconciliation.
