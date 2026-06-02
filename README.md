@@ -292,7 +292,7 @@ The test suite has 142 tests covering:
 - **Output integrity** — directory layout, file presence, summary-vs-detail reconciliation.
 - **Date resolution** — `run` produces 8 dates (anchor + 6 trailing + t-365); `backfill` produces a contiguous range with no t-365.
 
-No live network or database calls are made. The realism layer is exercised against test doubles. CI runs the full suite on every push.
+No live network or database calls are made. The realism layer is exercised against test doubles. CI runs the full suite on every push. Three of those 142 tests exercise the realism layer's SQL query target through SQLAlchemy, which is an optional extra; where it is not installed those three skip at collection and a checkout collects 139 instead.
 
 ## Where this fits in the platform
 
