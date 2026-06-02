@@ -283,7 +283,7 @@ python -m pytest -v
 python -m pytest --cov=src/knot_shore --cov-report=term-missing
 ```
 
-The test suite has 141 tests covering:
+The test suite has 142 tests covering:
 
 - **Determinism** — byte-identity across successive runs of the same seed (the single most important property).
 - **Anomaly injection** — the 5%-per-store-day rate verified against a binomial confidence interval over a large sample of independent trials, ground-truth log integrity.
