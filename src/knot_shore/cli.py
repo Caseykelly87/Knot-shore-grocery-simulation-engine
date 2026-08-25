@@ -27,7 +27,7 @@ Commands
 
   backfill
     Generate a contiguous historical date range (no T-365). Defaults
-    to the canonical 2025-07-01 through 2025-12-31 window. Anchor
+    to the canonical 2024-01-01 through 2025-12-31 window. Anchor
     either edge with --start-date or --end-date (mutually exclusive)
     and length with --days. Reuses the same Stage 1 → Stage 2 → anomaly
     → Stage 3 pipeline as `run`; does not generate store reports.
@@ -56,11 +56,12 @@ logger = structlog.get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Backfill defaults — canonical window 2025-07-01 through 2025-12-31
+# Backfill defaults — canonical window 2024-01-01 through 2025-12-31.
+# Two full calendar years: 366 days of 2024 (leap) plus 365 of 2025.
 # ---------------------------------------------------------------------------
 
 DEFAULT_BACKFILL_END_DATE = date(2025, 12, 31)
-DEFAULT_BACKFILL_DAYS = 184
+DEFAULT_BACKFILL_DAYS = 731
 
 
 def resolve_backfill_dates(
@@ -109,7 +110,7 @@ def _run_pipeline(
     output_dir: Path,
     no_realism: bool,
     generate_reports_for: date | None,
-) -> tuple[list[date], list[dict]]:
+) -> list[date]:
     """Run Stage 1 → 2 → anomaly → Stage 3 for a list of target dates.
 
     Parameters
@@ -130,17 +131,16 @@ def _run_pipeline(
 
     Returns
     -------
-    (generated_dates, anomaly_summaries)
+    The dates that were freshly written (dates whose folder already
+    existed are skipped and do not appear here).
     """
     from knot_shore import anomalies, realism  # noqa: PLC0415
-    from knot_shore.anomalies import anomaly_summary  # noqa: PLC0415
     from knot_shore.config import DEPARTMENTS, STORES  # noqa: PLC0415
     from knot_shore.output import daily_dir_for, write_daily  # noqa: PLC0415
     from knot_shore.reports import generate_all_reports  # noqa: PLC0415
     from knot_shore.sales_generator import generate_day  # noqa: PLC0415
 
     generated: list[date] = []
-    anomaly_summaries: list[dict] = []
 
     # Long pipelines (notably `backfill`, which processes ~184 dates) emit
     # periodic progress at every PROGRESS_INTERVAL completed dates. Short
@@ -177,7 +177,7 @@ def _run_pipeline(
         )
 
         # Stage 2 (optional)
-        if not no_realism and realism.is_available(force_disable=no_realism):
+        if not no_realism and realism.is_available():
             dept_df, summary_df = realism.adjust(
                 dept_df=dept_df,
                 summary_df=summary_df,
@@ -193,7 +193,6 @@ def _run_pipeline(
             target_date=target_date,
             global_seed=seed,
         )
-        anomaly_summaries.append(anomaly_summary(anomaly_log_df))
 
         # Stage 3: write CSVs
         written = write_daily(
@@ -221,7 +220,7 @@ def _run_pipeline(
 
         _maybe_emit_progress(i)
 
-    return generated, anomaly_summaries
+    return generated
 
 
 # ---------------------------------------------------------------------------
@@ -293,7 +292,7 @@ def cmd_run(
 
     use_realism = _check_realism(no_realism, realism)
 
-    generated, _ = _run_pipeline(
+    generated = _run_pipeline(
         target_dates=target_dates,
         promos_df=promos_df,
         seed=seed,
@@ -340,7 +339,7 @@ def cmd_backfill(
 
     Default window when neither start_date nor end_date is provided:
     DEFAULT_BACKFILL_END_DATE (2025-12-31) ending, DEFAULT_BACKFILL_DAYS
-    (184) length, producing 2025-07-01 through 2025-12-31.
+    (731) length, producing 2024-01-01 through 2025-12-31.
     """
     from knot_shore import realism  # noqa: PLC0415
     from knot_shore.output import (  # noqa: PLC0415
@@ -365,7 +364,7 @@ def cmd_backfill(
         end_date=target_dates[-1].isoformat(),
     )
 
-    generated, _ = _run_pipeline(
+    generated = _run_pipeline(
         target_dates=target_dates,
         promos_df=promos_df,
         seed=seed,
@@ -459,7 +458,7 @@ def _require_init(output_dir, dimensions_exist, promotions_exist) -> None:
 
 def _check_realism(no_realism: bool, realism_module) -> bool:
     """Log realism engine status and return whether it is active."""
-    use_realism = (not no_realism) and realism_module.is_available(force_disable=no_realism)
+    use_realism = (not no_realism) and realism_module.is_available()
     if use_realism:
         logger.info("realism_engine_active", stage=2)
     else:
@@ -529,7 +528,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "backfill",
         help=(
             "Generate a contiguous historical date range. Defaults to the "
-            "canonical 2025-07-01 through 2025-12-31 window. Useful for "
+            "canonical 2024-01-01 through 2025-12-31 window. Useful for "
             "populating downstream pipeline fixtures in one invocation."
         ),
     )
