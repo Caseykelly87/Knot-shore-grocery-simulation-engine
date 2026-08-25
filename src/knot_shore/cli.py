@@ -163,7 +163,7 @@ def _run_pipeline(
     for i, target_date in enumerate(target_dates):
         date_dir = daily_dir_for(output_dir, target_date)
         if date_dir.exists():
-            logger.debug("Folder exists for %s — skipping.", target_date.isoformat())
+            logger.debug("date_skipped_exists", date=target_date.isoformat())
             _maybe_emit_progress(i)
             continue
 
@@ -216,7 +216,7 @@ def _run_pipeline(
                 output_dir=output_dir,
                 anomaly_log_df=anomaly_log_df,
             )
-            logger.info("Store reports written for %s.", target_date.isoformat())
+            logger.info("reports_written", date=target_date.isoformat())
 
         _maybe_emit_progress(i)
 
@@ -242,18 +242,18 @@ def cmd_init(seed: int, output_dir: Path) -> None:
     from knot_shore.promotions import generate_promotions  # noqa: PLC0415
 
     if dimensions_exist(output_dir):
-        logger.info("Dimension files already exist — skipping dimension generation.")
+        logger.info("dimensions_skipped_exist", command="init")
     else:
-        logger.info("Generating dimension tables …")
+        logger.info("dimensions_generating", command="init")
         stores_df = generate_dim_stores()
         depts_df = generate_dim_departments()
         calendar_df = generate_dim_calendar()
         write_dimensions(stores_df, depts_df, calendar_df, output_dir)
 
     if promotions_exist(output_dir):
-        logger.info("Promotions file already exists — skipping promotion generation.")
+        logger.info("promotions_skipped_exist", command="init")
     else:
-        logger.info("Generating 4-year promotion schedule (seed=%d) …", seed)
+        logger.info("promotions_generating", command="init", seed=seed)
         promos_df = generate_promotions(seed=seed)
         write_promotions(promos_df, output_dir)
         logger.info(
@@ -403,9 +403,10 @@ def cmd_reports(anchor: date, output_dir: Path) -> None:
 
     if not daily_dir.exists():
         logger.error(
-            "No daily data found for %s at %s. Run 'python -m knot_shore run' first.",
-            date_str,
-            daily_dir,
+            "daily_data_missing",
+            date=date_str,
+            path=str(daily_dir),
+            hint="run 'python -m knot_shore run' first",
         )
         sys.exit(1)
 
@@ -433,7 +434,7 @@ def cmd_reports(anchor: date, output_dir: Path) -> None:
         output_dir=output_dir,
         anomaly_log_df=anomaly_log_df,
     )
-    logger.info("Store reports written for %s.", date_str)
+    logger.info("reports_written", command="reports", date=date_str)
 
 
 # ---------------------------------------------------------------------------
@@ -444,14 +445,16 @@ def _require_init(output_dir, dimensions_exist, promotions_exist) -> None:
     """Exit with an error if init has not been run."""
     if not dimensions_exist(output_dir):
         logger.error(
-            "Dimension files not found in %s. Run 'python -m knot_shore init' first.",
-            output_dir,
+            "dimensions_missing",
+            path=str(output_dir),
+            hint="run 'python -m knot_shore init' first",
         )
         sys.exit(1)
     if not promotions_exist(output_dir):
         logger.error(
-            "Promotions file not found in %s. Run 'python -m knot_shore init' first.",
-            output_dir,
+            "promotions_missing",
+            path=str(output_dir),
+            hint="run 'python -m knot_shore init' first",
         )
         sys.exit(1)
 
@@ -477,6 +480,14 @@ def _promotions_exist(output_dir: Path) -> bool:
 # ---------------------------------------------------------------------------
 # Argument parser and main
 # ---------------------------------------------------------------------------
+
+def _positive_int(raw: str) -> int:
+    """argparse type for --days, so a bad value is a usage error not a traceback."""
+    value = int(raw)
+    if value < 1:
+        raise argparse.ArgumentTypeError(f"must be a positive integer (got {value})")
+    return value
+
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -559,7 +570,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     bf_p.add_argument(
         "--days",
-        type=int,
+        type=_positive_int,
         default=DEFAULT_BACKFILL_DAYS,
         help=f"Length of the range in days (default {DEFAULT_BACKFILL_DAYS}).",
     )
