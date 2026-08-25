@@ -216,7 +216,6 @@ def generate_store_report(
     # department rows actually displayed; the summary_row totals would diverge after
     # anomaly injection rewrites a single department's cogs / gross_margin.
     labor = float(summary_row["labor_cost"])
-    labor_pct = float(summary_row["labor_cost_pct"])
 
     # Overall margin: derive from the department rows actually displayed
     net_total_display = float(store_dept["net_sales"].sum())
@@ -225,6 +224,7 @@ def generate_store_report(
     overall_margin_pct = (
         gross_margin_display / net_total_display if net_total_display != 0 else 0.0
     )
+    labor_pct = labor / net_total_display if net_total_display != 0 else 0.0
 
     lines.append(
         f"{'STORE TOTAL':<26} {_format_currency(net_total_display):>10} "
