@@ -109,10 +109,10 @@ def write_promotions(promos_df: pd.DataFrame, output_dir: Path) -> None:
 
 def _write_if_new(df: pd.DataFrame, path: Path, label: str) -> None:
     if path.exists():
-        logger.info("Skipping %s — file already exists at %s", label, path)
+        logger.info("file_skipped_exists", file=label, path=str(path))
         return
     df.to_csv(path, index=False, encoding="utf-8")
-    logger.info("Wrote %s (%d rows) → %s", label, len(df), path)
+    logger.info("file_written", file=label, rows=len(df), path=str(path))
 
 
 # ---------------------------------------------------------------------------
@@ -135,9 +135,7 @@ def write_daily(
     date_str = target_date.isoformat()
 
     if daily_dir.exists():
-        logger.warning(
-            "Daily folder already exists for %s — skipping (no overwrite).", date_str
-        )
+        logger.warning("daily_folder_exists_skipped", date=date_str, path=str(daily_dir))
         return False
 
     daily_dir.mkdir(parents=True, exist_ok=True)
@@ -216,7 +214,7 @@ def update_manifest(
             with open(manifest_path, encoding="utf-8") as fh:
                 manifest = json.load(fh)
         except (json.JSONDecodeError, OSError):
-            logger.warning("Could not read existing manifest.json — starting fresh.")
+            logger.warning("manifest_unreadable_starting_fresh", path=str(manifest_path))
             manifest = _empty_manifest(global_seed)
     else:
         manifest = _empty_manifest(global_seed)
@@ -300,7 +298,7 @@ def update_manifest(
     output_dir.mkdir(parents=True, exist_ok=True)
     with open(manifest_path, "w", encoding="utf-8") as fh:
         json.dump(manifest, fh, indent=2)
-    logger.info("Manifest updated → %s", manifest_path)
+    logger.info("manifest_updated", path=str(manifest_path))
 
 
 def _empty_manifest(global_seed: int) -> dict:
