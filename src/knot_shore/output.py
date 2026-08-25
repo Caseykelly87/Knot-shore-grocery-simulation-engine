@@ -4,14 +4,10 @@ output.py — Stage 3: Write DataFrames to CSV files and update manifest.json.
 This is the ONLY module that touches the filesystem for data output.
 
 Directory layout for daily data:
-  output/daily/{MM}/{DD}/{YYYY}/
+  output/daily/{YYYY}/{MM}/{DD}/
     department_sales.csv
     store_summary.csv
     anomaly_log.csv
-
-This groups all years' data for the same calendar date together, so
-daily/06/15/ contains subdirectories side by side — useful for browsing
-year-over-year comparisons.
 
 Responsibilities:
   - Write dimension tables (run once via init)
@@ -62,17 +58,14 @@ _ANOMALY_TYPES: tuple[str, ...] = (
 def daily_dir_for(output_dir: Path, target_date: date) -> Path:
     """Return the output directory for a specific date.
 
-    Layout: output_dir/daily/{MM}/{DD}/{YYYY}/
-
-    This groups all years' data for the same calendar date (MM/DD) together,
-    making year-over-year comparison browsing natural.
+    Layout: output_dir/daily/{YYYY}/{MM}/{DD}/
     """
     return (
         output_dir
         / "daily"
+        / f"{target_date.year:04d}"
         / f"{target_date.month:02d}"
         / f"{target_date.day:02d}"
-        / str(target_date.year)
     )
 
 
@@ -133,7 +126,7 @@ def write_daily(
     anomaly_log_df: pd.DataFrame,
     output_dir: Path,
 ) -> bool:
-    """Write daily CSVs to output_dir/daily/{MM}/{DD}/{YYYY}/.
+    """Write daily CSVs to output_dir/daily/{YYYY}/{MM}/{DD}/.
 
     Returns True if files were written, False if the folder already existed
     (skipped — no overwrite).
