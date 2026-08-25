@@ -33,19 +33,18 @@ CALENDAR_END: date = date(2026, 12, 31)
 # ---------------------------------------------------------------------------
 #
 # Each per-date RNG seeds from (global_seed + date.toordinal() + offset).
-# The offsets keep the streams that fire on the same date independent
-# — same date and same seed yields byte-identical output across runs,
-# but the sales stream, the anomaly stream, and the realism stream
-# produce different sequences because each starts from a different
-# offset into the np.random state space.
+# Same date and same seed yields byte-identical output across runs, while
+# the sales, anomaly, and realism streams each start from a different
+# point in the seed space.
 #
-# Offsets are orders of magnitude apart so the streams' distributions
-# don't accidentally overlap — 1_000_000 and 999_999 are large enough
-# that they can't collide with realistic seeds.
+# The gap between offsets has to exceed the span of date ordinals in play,
+# otherwise one stream's seed for a given date lands on another stream's
+# seed for a date that many days away. A 1,000,000-day gap is roughly
+# 2,700 years, well beyond any date this engine generates.
 
 RNG_OFFSET_SALES: int = 0
 RNG_OFFSET_ANOMALIES: int = 1_000_000
-RNG_OFFSET_REALISM: int = 999_999
+RNG_OFFSET_REALISM: int = 2_000_000
 
 # Noise distribution: N(µ=1.0, σ) clipped to [lower, upper]
 NOISE_SIGMA_SALES: float = 0.04
