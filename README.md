@@ -20,7 +20,7 @@ Synthetic data generator for Knot Shore Grocery, a fictional 8-store grocery cha
 
 ## What it does
 
-The engine generates synthetic daily operational data for 8 stores: per-store summaries (revenue, transactions, average basket, labor cost percentage) and per-store-department detail (net sales, transactions, units sold, gross margin percentage). Output is a tree of CSV files under `output/daily/{MM}/{DD}/{YYYY}/` that downstream pipeline stages ingest.
+The engine generates synthetic daily operational data for 8 stores: per-store summaries (gross and net sales, transactions, labor cost and labor cost percentage) and per-store-department detail (net sales, transactions, units sold, gross margin percentage). Output is a tree of CSV files under `output/daily/{YYYY}/{MM}/{DD}/` that downstream pipeline stages ingest.
 
 Each generated date is seeded deterministically — the same seed and date produces byte-identical output across runs, machines, and operating systems. The platform's paired-year canonical fixtures depend on this property.
 
@@ -45,13 +45,13 @@ python -m knot_shore init --seed 42 --output ./output
 # Generate daily data — anchor is today, generates today + 6 trailing days + same date one year prior
 python -m knot_shore run --seed 42 --output ./output
 
-# Or backfill a contiguous historical window
-python -m knot_shore backfill --start-date 2025-07-01 --days 184 --output ./output
+# Or backfill the canonical two-year window (2024-01-01 through 2025-12-31)
+python -m knot_shore backfill --output ./output
 ```
 
 After `init`, output contains dimension tables (stores, departments, calendar) and a four-year promotion schedule. Subsequent `run` or `backfill` invocations populate the daily data tree.
 
-Python 3.11+ is required. Runtime dependencies: `faker>=19`, `numpy>=1.26`, `pandas>=2.1`, `structlog>=24`, `pyarrow>=14` (the latter so the realism layer can read the bundled economic fixture out of the box). The realism extras add `sqlalchemy>=2` and `psycopg2-binary>=2.9` for the database path. The fixtures extra adds `requests>=2.31`, `python-dotenv`, and `truststore>=0.10` for the refresh script.
+Python 3.11+ is required. Runtime dependencies: `numpy>=1.26`, `pandas>=2.1`, `structlog>=24`, `pyarrow>=14` (the latter so the realism layer can read the bundled economic fixture out of the box). The realism extras add `sqlalchemy>=2` and `psycopg2-binary>=2.9` for the database path. The fixtures extra adds `requests>=2.31`, `python-dotenv`, and `truststore>=0.10` for the refresh script.
 
 ## Commands
 
@@ -87,7 +87,7 @@ The `run` command also generates per-store reports under `output/reports/YYYY-MM
 Generates a contiguous historical date range in a single invocation. No T-365 paired generation, no per-store reports — backfill is for filling explicit windows.
 
 ```bash
-# Default — generates 2025-07-01 through 2025-12-31 (184 days, the canonical demo window)
+# Default — generates 2024-01-01 through 2025-12-31 (731 days, the canonical window)
 python -m knot_shore backfill --output ./output
 
 # Override start date — extends forward by --days
@@ -100,7 +100,9 @@ python -m knot_shore backfill --end-date 2025-09-30 --days 184 --output ./output
 python -m knot_shore backfill --output ./output --no-realism
 ```
 
-`--start-date` and `--end-date` are mutually exclusive. Both default to the canonical window if neither is provided. The `--days` argument controls the window length.
+`--start-date` and `--end-date` are mutually exclusive. If neither is provided the canonical window is used. The `--days` argument controls the window length; it must be a positive integer.
+
+The canonical window is two full calendar years — 366 days of 2024 (leap) plus 365 of 2025 — so downstream repositories have complete years on both sides of a year-over-year comparison.
 
 ### `reports`
 
@@ -116,10 +118,10 @@ Each generated date passes through three stages in order:
 
 ```
 Stage 1: BASE GENERATION    →   Stage 2: REALISM LAYER       →   Stage 3: ANOMALY INJECTION → OUTPUT
-Economically-blind waterfall    Economic multipliers from        Inject up to 4 types of
-using seasonality, day-of-week, real FRED/BLS economic data      data integrity anomalies,
-promotions, and noise.          (skipped when DB unavailable     write CSVs and ground-truth
-                                or --no-realism is passed).      anomaly_log.csv.
+Economically-blind waterfall    Economic multipliers from        Inject up to 4 types of        Write the three
+using seasonality, day-of-week, real FRED/BLS economic data      data integrity anomalies       CSVs for the date
+promotions, and noise.          (skipped when --no-realism       and record each one in         and update
+                                is passed).                      the ground-truth log.          manifest.json.
 ```
 
 Stage 2 has a three-tier data-source precedence: database, then a bundled parquet fixture committed under [`seed_data/economic/`](seed_data/economic/), then skip. If the database is unavailable or cannot supply the realism-set series, the layer falls back to the bundled fixture so Stage 2 still runs. Stage 2 is only bypassed when neither source is present — a broken-install state.
@@ -149,10 +151,10 @@ On each generated date, per store there is a 5% probability of injecting one ano
 
 | Type | Weight | Description |
 |---|---:|---|
-| `integrity_breach` | 40% | `net_sales` is forced to differ from `gross_sales − discount_amount` by a small offset. The summary row's totals are recomputed from departments, so this surfaces as a header-vs-detail mismatch. |
-| `missing_department` | 30% | One department row is removed from the daily output, leaving the summary row referring to a department that doesn't appear in the detail. |
+| `integrity_breach` | 40% | One department row's `net_sales` is shifted by ±$50–200, so it no longer equals `gross_sales − discount_amount`. The store summary is left untouched, so the store's `net_sales_total` also stops matching the sum of its department rows. |
+| `missing_department` | 30% | One department row is dropped from the daily output. The store summary totals are recomputed from the surviving rows, so summary and detail still reconcile — what betrays the anomaly is the store having 9 department rows instead of 10. |
 | `margin_outlier` | 20% | One department's `gross_margin_pct` is set to an unrealistically high value (0.95, when cogs collapses to 5% of net sales) or a negative value (when cogs is inflated to 1.05–1.30× net sales). |
-| `duplicate_row` | 10% | One department row is duplicated exactly, inflating that department's totals on that date. |
+| `duplicate_row` | 10% | One department row is repeated verbatim, so the store has two rows for that department. The summary is not recomputed, so the detail rows now sum to more than the summary reports. |
 
 The ground-truth `anomaly_log.csv` records every injection: date, store_id, anomaly_type, and any per-type details (e.g., the affected department_id). The platform's downstream detection rules (in `economic-data-etl`) look for anomalies across seven rules at two grains — store-day bands for revenue, labor percentage, average ticket, and transactions, a year-over-year ratio rule, a rolling 28-day z-score on revenue, and a department-grain `department_coverage` structural rule — which is a different set of phenomena than what's injected here. The injection log is the platform's ground truth for evaluating detection quality, but no platform code reads it at runtime; only the upstream `economic-data-etl/scripts/evaluate_detection.py` reads it.
 
@@ -169,9 +171,9 @@ output/
 ├── promotions/
 │   └── promotions.csv          # 4-year promotion schedule
 ├── daily/
-│   └── {MM}/                   # Month (01–12)
-│       └── {DD}/               # Day of month (01–31)
-│           └── {YYYY}/         # Year
+│   └── {YYYY}/                 # Year
+│       └── {MM}/               # Month (01–12)
+│           └── {DD}/           # Day of month (01–31)
 │               ├── store_summary.csv       # 8 rows per file (one per store)
 │               ├── department_sales.csv    # ~80 rows per file (8 stores × 10 departments)
 │               └── anomaly_log.csv         # 0+ rows per file (always written)
@@ -181,7 +183,7 @@ output/
 └── manifest.json               # Run history; updated by every command
 ```
 
-The date-tree layout (`{MM}/{DD}/{YYYY}/`) is the contract consumed by the upstream ETL repo's source adapter. The adapter walks this tree, validates each file's schema, and ingests the rows into canonical parquet artifacts.
+The date-tree layout (`{YYYY}/{MM}/{DD}/`) is the contract consumed by the downstream ETL repo's source adapter. The adapter walks this tree, validates each file's schema, and ingests the rows into canonical parquet artifacts. Nesting year-first keeps a contiguous date range contiguous on disk and makes lexical path order match calendar order.
 
 ## Realism layer (Stage 2)
 
@@ -207,9 +209,9 @@ The realism layer emits one `realism_source` event per run announcing the resolv
 
 [`seed_data/economic/economic_observations.parquet`](seed_data/economic/) is the offline-mode data source. The realism layer reads it when no database is configured or when the configured database cannot supply the realism-set series. The accompanying [`metadata.json`](seed_data/economic/metadata.json) carries the fixture's provenance:
 
-- **Last updated:** the `last_updated` field in `metadata.json` — the placeholder ships with `1970-01-01T00:00:00Z` and `is_placeholder: true`; the refresh script rewrites both fields with the current timestamp.
-
-The fixture committed initially is a synthetic placeholder (round-number values, monthly cadence from 2023-01 through 2024-06) so the realism layer's offline path has data to read and the test suite has something to exercise. The first refresh against the live APIs replaces it with real 2023-present data.
+- **`last_updated`** — when the refresh script last rewrote the fixture.
+- **`is_placeholder`** — `true` only for the synthetic stand-in the repo shipped with before the first live refresh. The committed fixture now carries real data, so this is `false`.
+- **`series`, `row_count`, `date_range`** — what the current fixture actually contains, written by the refresh script rather than maintained by hand.
 
 Schema (mirrors the ETL pipeline's `raw.fact_economic_observations` table):
 
@@ -247,13 +249,13 @@ The engine emits structured logs via [structlog](https://www.structlog.org/). Ou
 Console output:
 
 ```
-2025-12-31T17:34:42.118Z [info     ] backfill_started               command=backfill target_date_count=184 start_date=2025-07-01 end_date=2025-12-31
+2025-12-31T17:34:42.118Z [info     ] backfill_started               command=backfill target_date_count=731 start_date=2024-01-01 end_date=2025-12-31
 ```
 
 JSON output:
 
 ```json
-{"event": "backfill_started", "command": "backfill", "target_date_count": 184, "start_date": "2025-07-01", "end_date": "2025-12-31", "level": "info", "logger": "knot_shore.cli", "timestamp": "2025-12-31T17:34:42.118Z"}
+{"event": "backfill_started", "command": "backfill", "target_date_count": 731, "start_date": "2024-01-01", "end_date": "2025-12-31", "level": "info", "logger": "knot_shore.cli", "timestamp": "2025-12-31T17:34:42.118Z"}
 ```
 
 To debug a failing run:
@@ -283,7 +285,7 @@ python -m pytest -v
 python -m pytest --cov=src/knot_shore --cov-report=term-missing
 ```
 
-The test suite has 142 tests covering:
+The suite covers:
 
 - **Determinism** — byte-identity across successive runs of the same seed (the single most important property).
 - **Anomaly injection** — the 5%-per-store-day rate verified against a binomial confidence interval over a large sample of independent trials, ground-truth log integrity.
@@ -292,7 +294,7 @@ The test suite has 142 tests covering:
 - **Output integrity** — directory layout, file presence, summary-vs-detail reconciliation.
 - **Date resolution** — `run` produces 8 dates (anchor + 6 trailing + t-365); `backfill` produces a contiguous range with no t-365.
 
-No live network or database calls are made. The realism layer is exercised against test doubles. CI runs the full suite on every push. Three of those 142 tests exercise the realism layer's SQL query target through SQLAlchemy, which is an optional extra; where it is not installed those three skip at collection and a checkout collects 139 instead.
+No live network or database calls are made. The realism layer is exercised against test doubles. CI runs the full suite on every push behind a 90% coverage floor. A few tests exercise the realism layer's SQL query target through SQLAlchemy, which is an optional extra; where it is not installed those skip at collection.
 
 ## Where this fits in the platform
 
@@ -304,7 +306,7 @@ knot-shore-grocery-simulation-engine    →    economic-data-etl    →    econo
                                                                                                     + docs hub
 ```
 
-The engine produces CSV files under `output/daily/{MM}/{DD}/{YYYY}/`. The ETL repo reads that tree, validates schemas, transforms into canonical parquet artifacts, and applies static-band detection rules. The API serves the canonical artifacts as JSON. The portal consumes the API and renders three primary dashboards plus an architectural documentation hub.
+The engine produces CSV files under `output/daily/{YYYY}/{MM}/{DD}/`. The ETL repo reads that tree, validates schemas, transforms into canonical parquet artifacts, and applies static-band detection rules. The API serves the canonical artifacts as JSON. The portal consumes the API and renders three primary dashboards plus an architectural documentation hub.
 
 The platform's deployed portal is at [https://knot-shore-portal.vercel.app](https://knot-shore-portal.vercel.app) (offline mode, bundled fixtures); the full-stack technical demo is the orchestration repo at [https://github.com/Caseykelly87/knot-shore-platform](https://github.com/Caseykelly87/knot-shore-platform).
 

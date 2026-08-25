@@ -1,8 +1,10 @@
 """
 reports.py — Plain-text store report generator.
 
-Produces one file per store for today's date only, formatted like a
-manager's daily email to headquarters.  Historical dates do not get reports.
+Produces one file per store for a single date, formatted like a manager's
+daily email to headquarters. `run` generates them for its anchor date and
+`reports` regenerates them for any date that already has daily data;
+`backfill` does not generate them at all.
 
 The report displays data as-is — anomalies are visible in the numbers but
 are NOT identified as errors.  Anomaly descriptions in the NOTES section

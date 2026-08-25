@@ -1,5 +1,5 @@
 """
-cli.py — Entry point: orchestrates Stage 1 → Stage 2 → Anomaly Injection → Stage 3.
+cli.py — Entry point: orchestrates Stage 1 → Stage 2 → Stage 3, then writes output.
 
 Usage
 -----
@@ -21,7 +21,7 @@ Commands
     seven-day window (anchor through anchor-6) plus the same calendar
     date one year prior.  Anchor defaults to today; override with --date.
     For each date: skip if exists → Stage 1 → Stage 2 (optional) →
-    anomaly injection → Stage 3.
+    Stage 3 → write CSVs.
     Generate store reports for the anchor date only.
     Update manifest.json.
 
@@ -29,8 +29,8 @@ Commands
     Generate a contiguous historical date range (no T-365). Defaults
     to the canonical 2024-01-01 through 2025-12-31 window. Anchor
     either edge with --start-date or --end-date (mutually exclusive)
-    and length with --days. Reuses the same Stage 1 → Stage 2 → anomaly
-    → Stage 3 pipeline as `run`; does not generate store reports.
+    and length with --days. Reuses the same Stage 1 → Stage 2 → Stage 3
+    pipeline as `run`; does not generate store reports.
 
   reports
     (Re-)generate store report files for a specific date.
@@ -111,7 +111,7 @@ def _run_pipeline(
     no_realism: bool,
     generate_reports_for: date | None,
 ) -> list[date]:
-    """Run Stage 1 → 2 → anomaly → Stage 3 for a list of target dates.
+    """Run Stage 1 → 2 → 3 for a list of target dates and write the output.
 
     Parameters
     ----------
@@ -142,7 +142,7 @@ def _run_pipeline(
 
     generated: list[date] = []
 
-    # Long pipelines (notably `backfill`, which processes ~184 dates) emit
+    # Long pipelines (notably `backfill`, which processes ~731 dates) emit
     # periodic progress at every PROGRESS_INTERVAL completed dates. Short
     # pipelines (`run`, 8 dates) stay below the threshold and emit nothing
     # — the existing started/complete events bookend them adequately.
@@ -186,7 +186,7 @@ def _run_pipeline(
                 global_seed=seed,
             )
 
-        # Anomaly injection
+        # Stage 3: anomaly injection
         dept_df, summary_df, anomaly_log_df = anomalies.inject(
             dept_df=dept_df,
             summary_df=summary_df,
@@ -194,7 +194,7 @@ def _run_pipeline(
             global_seed=seed,
         )
 
-        # Stage 3: write CSVs
+        # Write CSVs
         written = write_daily(
             target_date=target_date,
             dept_df=dept_df,

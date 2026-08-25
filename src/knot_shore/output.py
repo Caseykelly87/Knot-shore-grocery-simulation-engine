@@ -1,5 +1,5 @@
 """
-output.py — Stage 3: Write DataFrames to CSV files and update manifest.json.
+output.py — Write DataFrames to CSV files and update manifest.json.
 
 This is the ONLY module that touches the filesystem for data output.
 
@@ -203,9 +203,9 @@ def update_manifest(
                                     `last_invocation_dates`
                                     ('init', 'run', 'reports', 'backfill').
 
-    The distinction matters: after a 184-day backfill that ran on top of
+    The distinction matters: after a 731-day backfill that ran on top of
     earlier `run` output, `dates_generated` contains everything, but
-    `last_invocation_dates` only reflects the 184 backfilled dates.
+    `last_invocation_dates` only reflects the 731 backfilled dates.
     """
     manifest_path = output_dir / "manifest.json"
 
