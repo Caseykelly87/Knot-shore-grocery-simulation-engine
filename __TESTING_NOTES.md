@@ -70,6 +70,10 @@ The load-bearing data guarantees and the tests that hold them:
   `test_waterfall_integrity.py`, `test_output_manifest.py`,
   `test_reports.py`. Written files have the expected schema and content;
   store reports name the correct store and report the correct totals.
+- **Output layout** — `test_output_layout.py`. The daily tree is
+  `daily/YYYY/MM/DD/`, zero-padded, and sorts lexically in calendar
+  order. This is the path contract the ETL source adapter walks, so it
+  is pinned rather than left implicit in the writer.
 
 ## Determinism verification
 
@@ -88,25 +92,17 @@ The test lives in `tests/` and so runs in CI as part of the standard
 
 ## Test categories observed
 
-Snapshot from the May 2026 test-quality pass. The categorization below
-is preserved as historical context — the table records what the suite
-looked like *at the start* of that pass, not today's category counts.
-
-Reconnaissance classified the 136 tests present at the start of the pass:
-
-| Category             | Count |
-|----------------------|-------|
-| Business-correctness | 125   |
-| Structural           | 9     |
-| Ceremony             | 2     |
-| Uncategorizable      | 0     |
-
-The suite was already mostly business-correctness. The pass converted
+A test-quality pass classified the suite as overwhelmingly
+business-correctness, with a handful of structural tests and two
+ceremony tests (listed under Known weak areas below). The pass converted
 eight structural/ceremony tests covering hot-path code into
-business-correctness tests and added two tests (the ISO-week-53 cap and
-the end-to-end determinism check), bringing the suite to 138 tests
-(the current `pytest --collect-only -q` count as of May 2026; re-run
-collection rather than trusting this number if much time has passed).
+business-correctness tests and added the ISO-week-53 cap and end-to-end
+determinism checks.
+
+Exact counts are deliberately not recorded here. A number in prose goes
+stale the moment a test is added, and the previous version of this file
+carried one that had to be corrected three times. Run
+`pytest --collect-only -q` for the current figure.
 
 ## Known weak areas
 

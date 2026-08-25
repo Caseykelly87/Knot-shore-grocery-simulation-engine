@@ -1,5 +1,5 @@
 """
-cli.py — Entry point: orchestrates Stage 1 → Stage 2 → Anomaly Injection → Stage 3.
+cli.py — Entry point: orchestrates Stage 1 → Stage 2 → Stage 3, then writes output.
 
 Usage
 -----
@@ -21,16 +21,16 @@ Commands
     seven-day window (anchor through anchor-6) plus the same calendar
     date one year prior.  Anchor defaults to today; override with --date.
     For each date: skip if exists → Stage 1 → Stage 2 (optional) →
-    anomaly injection → Stage 3.
+    Stage 3 → write CSVs.
     Generate store reports for the anchor date only.
     Update manifest.json.
 
   backfill
     Generate a contiguous historical date range (no T-365). Defaults
-    to the canonical 2025-07-01 through 2025-12-31 window. Anchor
+    to the canonical 2024-01-01 through 2025-12-31 window. Anchor
     either edge with --start-date or --end-date (mutually exclusive)
-    and length with --days. Reuses the same Stage 1 → Stage 2 → anomaly
-    → Stage 3 pipeline as `run`; does not generate store reports.
+    and length with --days. Reuses the same Stage 1 → Stage 2 → Stage 3
+    pipeline as `run`; does not generate store reports.
 
   reports
     (Re-)generate store report files for a specific date.
@@ -56,11 +56,12 @@ logger = structlog.get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Backfill defaults — canonical window 2025-07-01 through 2025-12-31
+# Backfill defaults — canonical window 2024-01-01 through 2025-12-31.
+# Two full calendar years: 366 days of 2024 (leap) plus 365 of 2025.
 # ---------------------------------------------------------------------------
 
 DEFAULT_BACKFILL_END_DATE = date(2025, 12, 31)
-DEFAULT_BACKFILL_DAYS = 184
+DEFAULT_BACKFILL_DAYS = 731
 
 
 def resolve_backfill_dates(
@@ -109,8 +110,8 @@ def _run_pipeline(
     output_dir: Path,
     no_realism: bool,
     generate_reports_for: date | None,
-) -> tuple[list[date], list[dict]]:
-    """Run Stage 1 → 2 → anomaly → Stage 3 for a list of target dates.
+) -> list[date]:
+    """Run Stage 1 → 2 → 3 for a list of target dates and write the output.
 
     Parameters
     ----------
@@ -130,19 +131,18 @@ def _run_pipeline(
 
     Returns
     -------
-    (generated_dates, anomaly_summaries)
+    The dates that were freshly written (dates whose folder already
+    existed are skipped and do not appear here).
     """
     from knot_shore import anomalies, realism  # noqa: PLC0415
-    from knot_shore.anomalies import anomaly_summary  # noqa: PLC0415
     from knot_shore.config import DEPARTMENTS, STORES  # noqa: PLC0415
     from knot_shore.output import daily_dir_for, write_daily  # noqa: PLC0415
     from knot_shore.reports import generate_all_reports  # noqa: PLC0415
     from knot_shore.sales_generator import generate_day  # noqa: PLC0415
 
     generated: list[date] = []
-    anomaly_summaries: list[dict] = []
 
-    # Long pipelines (notably `backfill`, which processes ~184 dates) emit
+    # Long pipelines (notably `backfill`, which processes ~731 dates) emit
     # periodic progress at every PROGRESS_INTERVAL completed dates. Short
     # pipelines (`run`, 8 dates) stay below the threshold and emit nothing
     # — the existing started/complete events bookend them adequately.
@@ -163,7 +163,7 @@ def _run_pipeline(
     for i, target_date in enumerate(target_dates):
         date_dir = daily_dir_for(output_dir, target_date)
         if date_dir.exists():
-            logger.debug("Folder exists for %s — skipping.", target_date.isoformat())
+            logger.debug("date_skipped_exists", date=target_date.isoformat())
             _maybe_emit_progress(i)
             continue
 
@@ -177,7 +177,7 @@ def _run_pipeline(
         )
 
         # Stage 2 (optional)
-        if not no_realism and realism.is_available(force_disable=no_realism):
+        if not no_realism and realism.is_available():
             dept_df, summary_df = realism.adjust(
                 dept_df=dept_df,
                 summary_df=summary_df,
@@ -186,16 +186,15 @@ def _run_pipeline(
                 global_seed=seed,
             )
 
-        # Anomaly injection
+        # Stage 3: anomaly injection
         dept_df, summary_df, anomaly_log_df = anomalies.inject(
             dept_df=dept_df,
             summary_df=summary_df,
             target_date=target_date,
             global_seed=seed,
         )
-        anomaly_summaries.append(anomaly_summary(anomaly_log_df))
 
-        # Stage 3: write CSVs
+        # Write CSVs
         written = write_daily(
             target_date=target_date,
             dept_df=dept_df,
@@ -217,11 +216,11 @@ def _run_pipeline(
                 output_dir=output_dir,
                 anomaly_log_df=anomaly_log_df,
             )
-            logger.info("Store reports written for %s.", target_date.isoformat())
+            logger.info("reports_written", date=target_date.isoformat())
 
         _maybe_emit_progress(i)
 
-    return generated, anomaly_summaries
+    return generated
 
 
 # ---------------------------------------------------------------------------
@@ -243,18 +242,18 @@ def cmd_init(seed: int, output_dir: Path) -> None:
     from knot_shore.promotions import generate_promotions  # noqa: PLC0415
 
     if dimensions_exist(output_dir):
-        logger.info("Dimension files already exist — skipping dimension generation.")
+        logger.info("dimensions_skipped_exist", command="init")
     else:
-        logger.info("Generating dimension tables …")
+        logger.info("dimensions_generating", command="init")
         stores_df = generate_dim_stores()
         depts_df = generate_dim_departments()
         calendar_df = generate_dim_calendar()
         write_dimensions(stores_df, depts_df, calendar_df, output_dir)
 
     if promotions_exist(output_dir):
-        logger.info("Promotions file already exists — skipping promotion generation.")
+        logger.info("promotions_skipped_exist", command="init")
     else:
-        logger.info("Generating 4-year promotion schedule (seed=%d) …", seed)
+        logger.info("promotions_generating", command="init", seed=seed)
         promos_df = generate_promotions(seed=seed)
         write_promotions(promos_df, output_dir)
         logger.info(
@@ -293,7 +292,7 @@ def cmd_run(
 
     use_realism = _check_realism(no_realism, realism)
 
-    generated, _ = _run_pipeline(
+    generated = _run_pipeline(
         target_dates=target_dates,
         promos_df=promos_df,
         seed=seed,
@@ -340,7 +339,7 @@ def cmd_backfill(
 
     Default window when neither start_date nor end_date is provided:
     DEFAULT_BACKFILL_END_DATE (2025-12-31) ending, DEFAULT_BACKFILL_DAYS
-    (184) length, producing 2025-07-01 through 2025-12-31.
+    (731) length, producing 2024-01-01 through 2025-12-31.
     """
     from knot_shore import realism  # noqa: PLC0415
     from knot_shore.output import (  # noqa: PLC0415
@@ -365,7 +364,7 @@ def cmd_backfill(
         end_date=target_dates[-1].isoformat(),
     )
 
-    generated, _ = _run_pipeline(
+    generated = _run_pipeline(
         target_dates=target_dates,
         promos_df=promos_df,
         seed=seed,
@@ -404,9 +403,10 @@ def cmd_reports(anchor: date, output_dir: Path) -> None:
 
     if not daily_dir.exists():
         logger.error(
-            "No daily data found for %s at %s. Run 'python -m knot_shore run' first.",
-            date_str,
-            daily_dir,
+            "daily_data_missing",
+            date=date_str,
+            path=str(daily_dir),
+            hint="run 'python -m knot_shore run' first",
         )
         sys.exit(1)
 
@@ -434,7 +434,7 @@ def cmd_reports(anchor: date, output_dir: Path) -> None:
         output_dir=output_dir,
         anomaly_log_df=anomaly_log_df,
     )
-    logger.info("Store reports written for %s.", date_str)
+    logger.info("reports_written", command="reports", date=date_str)
 
 
 # ---------------------------------------------------------------------------
@@ -445,21 +445,23 @@ def _require_init(output_dir, dimensions_exist, promotions_exist) -> None:
     """Exit with an error if init has not been run."""
     if not dimensions_exist(output_dir):
         logger.error(
-            "Dimension files not found in %s. Run 'python -m knot_shore init' first.",
-            output_dir,
+            "dimensions_missing",
+            path=str(output_dir),
+            hint="run 'python -m knot_shore init' first",
         )
         sys.exit(1)
     if not promotions_exist(output_dir):
         logger.error(
-            "Promotions file not found in %s. Run 'python -m knot_shore init' first.",
-            output_dir,
+            "promotions_missing",
+            path=str(output_dir),
+            hint="run 'python -m knot_shore init' first",
         )
         sys.exit(1)
 
 
 def _check_realism(no_realism: bool, realism_module) -> bool:
     """Log realism engine status and return whether it is active."""
-    use_realism = (not no_realism) and realism_module.is_available(force_disable=no_realism)
+    use_realism = (not no_realism) and realism_module.is_available()
     if use_realism:
         logger.info("realism_engine_active", stage=2)
     else:
@@ -478,6 +480,14 @@ def _promotions_exist(output_dir: Path) -> bool:
 # ---------------------------------------------------------------------------
 # Argument parser and main
 # ---------------------------------------------------------------------------
+
+def _positive_int(raw: str) -> int:
+    """argparse type for --days, so a bad value is a usage error not a traceback."""
+    value = int(raw)
+    if value < 1:
+        raise argparse.ArgumentTypeError(f"must be a positive integer (got {value})")
+    return value
+
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -529,7 +539,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "backfill",
         help=(
             "Generate a contiguous historical date range. Defaults to the "
-            "canonical 2025-07-01 through 2025-12-31 window. Useful for "
+            "canonical 2024-01-01 through 2025-12-31 window. Useful for "
             "populating downstream pipeline fixtures in one invocation."
         ),
     )
@@ -560,7 +570,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     bf_p.add_argument(
         "--days",
-        type=int,
+        type=_positive_int,
         default=DEFAULT_BACKFILL_DAYS,
         help=f"Length of the range in days (default {DEFAULT_BACKFILL_DAYS}).",
     )

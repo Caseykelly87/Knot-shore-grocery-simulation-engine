@@ -1,5 +1,5 @@
 """
-anomalies.py — Anomaly injection (post-realism, pre-output).
+anomalies.py — Stage 3: Anomaly injection (post-realism, pre-output).
 
 On each generated date, per store there is a 5% probability that one
 anomaly is injected.  Only one anomaly type per store per date.

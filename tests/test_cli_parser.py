@@ -4,7 +4,7 @@ from datetime import date
 
 import pytest
 
-from knot_shore.cli import _build_parser
+from knot_shore.cli import DEFAULT_BACKFILL_DAYS, _build_parser
 
 
 def _parse(args):
@@ -68,9 +68,9 @@ class TestBackfillSubcommand:
         args = _parse(["backfill", "--end-date", "2025-09-30"])
         assert args.end_date == date(2025, 9, 30)
 
-    def test_backfill_days_defaults_184(self):
+    def test_backfill_days_defaults_to_canonical_window_length(self):
         args = _parse(["backfill"])
-        assert args.days == 184
+        assert args.days == DEFAULT_BACKFILL_DAYS
 
     def test_backfill_parses_custom_days(self):
         args = _parse(["backfill", "--days", "30"])

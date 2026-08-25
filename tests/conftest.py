@@ -13,7 +13,7 @@ from knot_shore.config import DEPARTMENTS, GLOBAL_SEED, STORES
 from knot_shore.promotions import generate_promotions
 from knot_shore.sales_generator import generate_day
 
-# A stable test date that falls on a non-holiday weekday in mid-range of the calendar
+# Stable non-holiday dates in mid-range of the calendar.
 TEST_DATE = date(2025, 6, 15)  # Sunday — exercises weekend logic
 TEST_DATE_WEEKDAY = date(2025, 6, 10)  # Tuesday
 

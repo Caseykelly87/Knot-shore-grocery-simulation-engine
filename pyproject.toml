@@ -8,7 +8,6 @@ version = "1.0.0"
 description = "Daily operational data generator for Knot Shore Grocery — an 8-store fictional chain in the St. Louis metro area."
 requires-python = ">=3.11"
 dependencies = [
-    "faker>=19.0",
     "numpy>=1.26",
     "pandas>=2.1",
     "structlog>=24.0",
